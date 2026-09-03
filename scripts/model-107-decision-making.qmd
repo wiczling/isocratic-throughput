@@ -1,0 +1,1126 @@
+---
+title: "Model 107. Izocratic Mulitilevel Model with Dewetting, Silanol and pKa effects"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+# Introductions
+
+In this study, I propose an isocratic multilevel model that accounts for dewetting, silanol interactions, and pKa effects. The model is developed using a dataset available at [link](https://chemrxiv.org/engage/chemrxiv/article-details/64948c82a2c387fa9ac5c1ce), which includes RP-HPLC retention time measurements for 85 analytes (including several duplicates) across 13 columns.
+
+# Setup
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+
+suppressWarnings(library(dplyr))
+suppressWarnings(library(ggplot2))
+suppressWarnings(library(patchwork))
+suppressWarnings(library(gridExtra))
+suppressWarnings(library(naniar))
+suppressWarnings(library(knitr))
+suppressWarnings(library(data.table))
+suppressWarnings(library(tidyverse))
+suppressWarnings(library(whisker))
+suppressWarnings(library(here))
+suppressWarnings(library(cmdstanr))
+suppressWarnings(library(posterior))
+suppressWarnings(library(bayesplot))
+suppressWarnings(library(tidybayes))
+suppressWarnings(library(reshape2))
+suppressWarnings(library(mrgmisc))
+suppressWarnings(library(pracma))
+suppressWarnings(library(GGally))
+#remotes::install_github("metrumresearchgroup/mrgmisc")
+set_cmdstan_path("C:/Users/GUMed/.cmdstan/cmdstan-2.38.0")
+select<-dplyr::select
+filter<-dplyr::filter
+set.seed(10271998) 
+source("helper-functions-v100.R")
+```
+
+```{r settings}
+data_dir = here::here("data")
+model_dir <- here::here("model","stan")  
+data_deriv_dir = here::here("data","deriv")
+if(!file.exists(data_deriv_dir)) dir.create(data_deriv_dir, recursive = T)
+```
+
+
+```{r set-theme, include = FALSE}
+theme_set(theme_bw())
+theme_update(
+  axis.title = element_text(size = 10, face = "bold"), 
+  axis.text = element_text(size = 8), 
+  legend.title = element_blank(),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.4, "cm"),
+  strip.text = element_text(size = 8),
+  legend.position = "bottom",
+  panel.grid.minor = element_blank()
+)
+```
+
+## Load data
+```{r load-data, message=FALSE, warning=FALSE}
+dataall <- read.csv(here(data_deriv_dir, "data.csv"), header = TRUE)%>%
+  mutate(Compound = HSM3_Name) %>%
+  mutate(fi = phi/100,
+         logk = log10(k))%>%
+  filter(!is.na(logk)) %>%
+  group_by(fi, Compound, Column_Phase) %>%
+  summarise(logk = mean(logk)) %>%
+  ungroup()%>%
+   mutate(ID = match(Compound, unique(Compound)),
+         column = match(Column_Phase, unique(Column_Phase)))
+
+analytes_names = dataall%>%distinct(ID, .keep_all = T)%>%select(ID, Compound)
+column_names = dataall%>%distinct(column, .keep_all = T)%>%select(column,Column_Phase)
+
+smiles <- read.csv(here(data_deriv_dir,"smiles.csv"), sep = ",", header = TRUE)%>%
+  select(-ID)%>%
+  left_join(analytes_names)%>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+fg_df = read.csv(file = here(data_deriv_dir,"smarts_functional_groups.csv"), header = TRUE)%>%
+  select(-id1,-id2) %>%
+  rename(smiles=SMILES) %>%
+  left_join(smiles,)%>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+descriptor_df <- read.csv(file = here(data_deriv_dir,"descriptor_df.csv"), header = TRUE)%>%
+  rename(smiles=SMILES) %>%
+  left_join(smiles) %>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+column_df = read.csv(file = here(data_deriv_dir,"columns.csv"), header = TRUE)%>%
+  mutate(Column_Phase = str_remove(Phase, "Waters|Agilent"))%>%
+  mutate(Column_Phase = str_remove(Column_Phase, " "))%>%
+  mutate(Column_Phase = case_when(Column_Phase == "Varian/C18-A" ~ "C18-A",
+                                  Column_Phase == "CSH Phenyl- Hexyl"~"CSH Phenyl-Hexyl",
+                                 .default = Column_Phase)) %>%
+  left_join(column_names) %>%
+  rename("carbon_loading" = "Carbon.Loading....",
+         "Endcapping" = "Endcapping...."
+         ) %>%
+  arrange(column)
+
+
+cation_names = c("Primary_arom_amine",
+"Secondary_arom_amine",
+"Secondary_aliph_amine",
+"Tertiary_aliph_amine",
+"Quaternary_aliph_ammonium",
+"Secondary_mixed_amine",
+"Tertiary_mixed_amine",
+"X1.2.Aminoalcohol",
+"Hetero_N_basic_H",
+"Hetero_N_basic_no_H")
+
+analytes_df = read.csv(file = here(data_deriv_dir,"analytes.csv"), header = TRUE) %>%
+   mutate(charge = if_else(pKa..base.d>3.2, 1, 0)) %>%
+      mutate(charge =if_else(is.na(charge), 0, charge))
+```
+
+
+## Prepare data
+```{r prepare-data, message=FALSE, warning=FALSE}
+# Only neutral
+fg_df <- fg_df %>% mutate(ID = match(ID, unique(ID)))
+dataall <- dataall %>% mutate(ID = match(ID, unique(ID)))
+analytes_names <- analytes_names %>% mutate(ID = match(ID, unique(ID)))
+smiles <-smiles %>% mutate(ID = match(ID, unique(ID)))
+descriptor_df <- descriptor_df %>% mutate(ID = match(ID, unique(ID)))
+analytes_df  <- analytes_df %>% mutate(ID = match(ID, unique(ID)))
+
+functional_groups = fg_df%>%select(where(~ is.character(.) || !all(. == 0, na.rm = TRUE))) %>%
+   select(-smiles, -Anion, -Kation, -Compound )
+ functional_groups_names<- colnames(functional_groups)
+ totalnrgroups <- summarise_each(functional_groups, funs(sum))
+ 
+```
+
+## Initial estimates
+```{r initial-estimates}
+init_aprox <- dataall %>%
+  group_by(Compound, ID, column) %>%
+  summarise(
+    S1 = if_else(n() == 1,-16,polyfit(fi / (1 + 2 * fi), logk, 1)[1]),
+    logkw = if_else(n() == 1,polyfit(-16 * fi / (1 + 2 * fi), logk, 0), 
+                             polyfit(fi / (1 + 2 * fi), logk, 1)[2]),
+    S2 = 2) %>%
+  ungroup() %>%
+  select(Compound, ID, column, logkw, S2, S1) %>%
+  mutate(S1 = -S1 / (1 + 2))
+
+init_vector <- init_aprox %>%
+  pivot_longer(cols = c(logkw, S1), names_to = "variable", values_to = "value") %>%
+  select(-Compound) %>%
+  mutate(variable = case_when(variable=="logkw" ~ "1", 
+                              variable=="S1" ~ "2")) %>%
+  arrange(variable, column, ID) %>%
+  group_by(ID, variable) %>%
+  summarize(value = mean(value)) %>%
+  group_by(variable) %>%
+  mutate(mvalue = mean(value),
+         svalue = sd(value)) %>%
+  ungroup() %>%
+  mutate(value = (value-mvalue)/svalue) %>%
+  arrange(variable, ID)
+```
+
+# Data analysis
+
+# Stan
+
+Multilevel modeling was performed in [Stan software](https://mc-stan.org/) linked with R/ [cmdstanr](https://mc-stan.org/cmdstanr/). For the inference we used 500 iterations, 1000 warmup iterations, and 8 Markov chains. The reduce_sum function was selected to accelerate the calculations. It works by parallelizing the execution of a single Stan chain across multiple cores. Convergence diagnostics were checked using Gelman−Rubin statistics and trace plots.
+
+## Initialize variables and parameters
+
+```{r stan-setup}
+data <- dataall %>% arrange(ID,column,fi)
+
+pKa = analytes_df$pKa..base.d
+
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+
+pHmpKa = 3.2-pKa
+
+nAnalytes=length(unique(data$ID))
+nColumns=length(unique(data$column))
+datastruct <- with(data,
+                  list(nAnalytes=length(unique(data$ID)),
+                       nColumns=length(unique(data$column)),
+                       nObs=length(data$ID),
+                       analyte=match(data$ID, unique(data$ID)),
+                       column=match(data$column, unique(data$column)),
+                       fi=data$fi,
+                       logP=descriptor_df$LogP,
+                       logCL=log10(column_df$carbon_loading),
+                       dissociated = analytes_df$charge,
+                       pHmpKa = pHmpKa,
+                       logkobs=logk,
+                       run_estimation=1))
+
+
+# initialize the values for each variable in each chain:
+init <- function(){
+  list(   logkw_hat = rnorm(1,2.5,1),
+          S1_hat    = rnorm(1,4,1),
+          logS2_hat = rnorm(1,log10(2),0.125),
+          gamma_hat = rnorm(1,1,0.2),
+          alpha_hat = rnorm(1,3,0.2),
+          dlogkw_hat=  rnorm(1,-1, 0.1),
+          dS1_hat =  rnorm(1,0, 0.5),
+          dlogS2_hat =  rnorm(1,0, 0.1),
+          fid_hat = 0,
+          beta_a_hat  = rnorm(2,c(0.7,0.5),c(0.125,0.1)),
+          beta_c_hat  = rnorm(3,0.5,0.2),
+          omega_a = c(0.5, 0.5, 0.05)*exp(rnorm(3, 0, 0.1)),
+          omega_c = c(0.5, 0.5, 0.5,0.1,0.1,0.1,0.1,0.1)*exp(rnorm(8, 0, 0.1)),
+          logomega_dStd = t(matrix(rep(0,nColumns*3), nrow=nColumns)),
+          m_logomega_d = c(-0.7, -0.7, -0.7)*exp(rnorm(3, 0, 0.5)),
+          sd_logomega_d = c(0.5, 0.5, 0.05)*exp(rnorm(3, 0, 0.1)),
+          L_a = t(chol(matrix(c(1,0.75,0.00,0.00,1,0.75,0.00,0.00,1), nrow=3))),
+          L_c = t(chol(matrix(c(1,0.75,0.75,0.75,1,0.75,0.75,0.75,1), nrow=3))),
+          L_d = diag(3),
+          etaStd   = t(matrix(c(init_vector$value,rep(0,nAnalytes)), nrow=nAnalytes)),
+          kappaStd = t(matrix(rep(0,nColumns*8), nrow=nColumns)),
+          dzeta1  = matrix(rep(0,nColumns*nAnalytes), nrow=nAnalytes),
+          dzeta2  = matrix(rep(0,nColumns*nAnalytes), nrow=nAnalytes),
+          dzeta3  = matrix(rep(0,nColumns*nAnalytes), nrow=nAnalytes),
+          sigma =  0.05*exp(rnorm(1, 0, 0.05))
+  )
+}
+```
+
+## Fitting the model
+
+```{r mod-settings}
+model_name <- "mod107"
+
+modelsim_name <- paste0(model_name,"sim")
+modelsim_name_ext <- paste0(modelsim_name,".stan")
+modsim_model_dir   <- here::here("model", "stan", modelsim_name)
+modsim_output_dir   <- here::here("model", "stan", modelsim_name, "output")
+
+if (!file.exists(modsim_model_dir)) dir.create(modsim_model_dir)
+if (!file.exists(modsim_output_dir)) dir.create(modsim_output_dir)
+
+modelsimgq_name <- paste0(model_name,"simgqfixed")
+modelsimgq_name_ext <- paste0(modelsimgq_name,".stan")
+modsimgq_model_dir   <- here::here("model", "stan", modelsimgq_name)
+modsimgq_output_dir   <- here::here("model", "stan", modelsimgq_name, "output")
+
+if (!file.exists(modsimgq_model_dir)) dir.create(modsimgq_model_dir)
+if (!file.exists(modsimgq_output_dir)) dir.create(modsimgq_output_dir)
+```
+
+# Decision making
+
+## Model
+```{r sim}
+mod107sim <- cmdstan_model(here(modsim_model_dir,modelsim_name_ext))
+```
+
+```{r helper-funcitons}
+plotting_i = function(temp_data,data_subset,data_all) {
+p<-temp_data%>%
+  tidyr::expand_grid(fi = seq(0.0,1,0.05)) %>%
+  mutate(logk1 = funlogki_pKa_v102(param.1,
+                                   param.2,
+                                   param.3,
+                                   param.4,
+                                   param.5,
+                                   param.6,
+                                   param.7,
+                                   param.8,
+                                   param.9,
+                                   param.10,fi)) %>%
+  ggplot(aes(x = fi, y = logk1, color = as.factor(i),fill = as.factor(i))) +
+  ggdist::stat_lineribbon(.width = c(.90), alpha = 1/2) +
+  labs(x="\u03C6", y="logk") +
+  facet_wrap(.~Column_Phase)+
+  coord_cartesian(ylim=c(log10(2),log10(10)))
+  
+  if (!is.null(data_subset)) {
+  p <- p +  geom_point(data = data_subset, aes(x=fi, y=logk, color = as.factor(i))) 
+  }
+   
+  if (!is.null(data_all)) {
+  p <- p +geom_point(data = data_all, aes(x=fi, y=logk, color = as.factor(i)), shape = 1)
+  } 
+
+p
+}
+
+
+plotting_pta = function(temp_data) {
+temp_data%>%
+   pivot_wider(
+    id_cols = c(.draw,Column_Phase),
+    names_from = i,
+    values_from = starts_with("param")
+  )%>%
+  tidyr::expand_grid(fi = seq(0.0,1,0.01)) %>%
+mutate(logk1 = funlogki_pKa_v102(param.1_1,
+                                 param.2_1,
+                                 param.3_1,
+                                 param.4_1,
+                                 param.5_1,
+                                 param.6_1,
+                                 param.7_1,
+                                 param.8_1,
+                                 param.9_1,
+                                 param.10_1,fi)) %>%
+  mutate(logk2 = funlogki_pKa_v102(param.1_2,
+                                   param.2_2,
+                                   param.3_2,
+                                   param.4_2,
+                                   param.5_2,
+                                   param.6_2,
+                                   param.7_2,
+                                   param.8_2,
+                                   param.9_2,
+                                   param.10_2,fi)) %>%
+  # mutate(ind = case_when(abs(logk1-logk2)>0.0969 &
+  #                          10^(pmin(logk1,logk2))>2 &
+  #                          10^(pmax(logk1,logk2))<10 ~ 1,
+  #                         .default = 0))%>%
+    mutate(
+    d  = abs(logk1 - logk2),
+    lo = 10^(pmin(logk1, logk2)),
+    hi = 10^(pmax(logk1, logk2)),
+    ind =
+      plogis((d  - 0.07918125) / 0.015) *  # midpoint for selectivity of 1.2, zero for 1.04 and 1 for 1.5
+      plogis((lo - 2)      / 0.25)  *
+      plogis((10 - hi)     / 1.5)) %>%
+  group_by(Column_Phase, fi) %>%
+  summarize(prob = mean(ind)) %>%
+  ggplot(aes(x = fi, y = prob)) +
+  geom_line()+
+  geom_hline(yintercept = c(0.5), color = "darkred",linetype = "dotted")+
+  facet_wrap(.~Column_Phase)+
+  labs(x="\u03C6", y="E(Utylity)", color = "Phase") +
+  coord_cartesian(ylim=c(0, 1)) 
+}
+
+
+plotting_rank = function(temp_data) {
+temp_data%>%
+   pivot_wider(
+    id_cols = c(.draw,Column_Phase),
+    names_from = i,
+    values_from = starts_with("param")
+  )%>%
+  tidyr::expand_grid(fi = seq(0.0,1,0.01)) %>%
+mutate(logk1 = funlogki_pKa_v102(param.1_1,
+                                 param.2_1,
+                                 param.3_1,
+                                 param.4_1,
+                                 param.5_1,
+                                 param.6_1,
+                                 param.7_1,
+                                 param.8_1,
+                                 param.9_1,
+                                 param.10_1,fi)) %>%
+  mutate(logk2 = funlogki_pKa_v102(param.1_2,
+                                   param.2_2,
+                                   param.3_2,
+                                   param.4_2,
+                                   param.5_2,
+                                   param.6_2,
+                                   param.7_2,
+                                   param.8_2,
+                                   param.9_2,
+                                   param.10_2,fi)) %>%
+  mutate(
+    d  = abs(logk1 - logk2),
+    lo = 10^(pmin(logk1, logk2)),
+    hi = 10^(pmax(logk1, logk2)),
+
+    ind =
+      plogis((d  - 0.07918125) / 0.015) *  # midpoint for selectivity of 1.2, zero for 1.04 and 1 for 1.5
+      plogis((lo - 2)      / 0.25)  *
+      plogis((10 - hi)     / 1.5)) %>%
+   group_by(.draw, Column_Phase) %>%
+   summarise(indmax = max(ind)) %>%
+  select(Column_Phase, .draw, indmax)%>%
+  group_by(.draw) %>%
+  mutate(rankx = rank(indmax)) %>%
+  ggplot(aes(y = Column_Phase, x = rankx)) +
+  ggdist::stat_pointinterval(point_interval = median_qi) +
+  ggdist::stat_dots(
+  side = "right",
+  justification = 0) +labs(y="Column", x="Rank") +
+  scale_x_continuous(limits = c(1, 13),breaks = 1:13)
+}
+
+```
+
+## Case 1. Cis-stilbene and Pyrene and Agilent PFP
+```{r estimate-case1, eval=FALSE}
+datastruct_sim = datastruct;
+ idx = c(80,82)
+temp_data<-dataall%>%filter(column==4, ID%in% idx)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+pKa = analytes_df %>% filter(ID%in% idx) %>% pull(pKa..base.d)
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+pHmpKa = 3.2-pKa
+logP = descriptor_df%>% filter(ID%in% idx) %>% pull(LogP)
+nAnalytes_sim = length(unique(temp_data$ID))
+nObs_sim = length(temp_data$ID)
+datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+datastruct_sim$nObs_sim= nObs_sim;
+datastruct_sim$logkobs_sim= temp_data$logk;
+datastruct_sim$fi_sim = temp_data$fi;
+datastruct_sim$logP_sim= logP;
+datastruct_sim$pHmpKa_sim= pHmpKa;
+datastruct_sim$analyte_sim= match(temp_data$ID, unique(temp_data$ID));
+datastruct_sim$column_sim= match(temp_data$column, unique(data$column));
+
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case1"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+
+```{r case1-results}
+ idx = c(80,82)
+temp_data<-dataall%>%filter(column==4, ID%in% idx)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+p1<-plotting_rank(temp_data_v2) + ggtitle("  Cis-stilbene and Pyrene \n Agilent PFP Phase Measurments")
+p1
+```
+
+
+## Case 1a. Cis-stilbene and Pyrene and Agilent PFP + 1 measurment on other Phases
+```{r estimate-case1a, eval=FALSE}
+datastruct_sim = datastruct;
+ idx = c(80,82)
+ temp_data1<-dataall%>%filter(column==4, ID%in% idx) 
+  selected_fi<-dataall%>%filter(column!=4, ID%in% idx)  %>%
+  group_by(Column_Phase, fi) %>%
+  summarise(
+    n_compounds = n(),
+    avg_logk = mean(logk),
+    .groups = "drop"
+  ) %>%
+  filter(n_compounds == 2) %>%
+  group_by(Column_Phase) %>%
+  slice_min(abs(avg_logk - 0.6), with_ties = FALSE) %>%
+  ungroup()
+ 
+ temp_data2 <- dataall %>%filter(column!=4, ID%in% idx) %>%
+  inner_join(selected_fi, by = c("Column_Phase", "fi")) %>%
+    select(-n_compounds, -avg_logk)
+  
+temp_data = rbind(temp_data1,temp_data2)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+pKa = analytes_df %>% filter(ID%in% idx) %>% pull(pKa..base.d)
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+pHmpKa = 3.2-pKa
+logP = descriptor_df%>% filter(ID%in% idx) %>% pull(LogP)
+nAnalytes_sim = length(unique(temp_data$ID))
+nObs_sim = length(temp_data$ID)
+datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+datastruct_sim$nObs_sim= nObs_sim;
+datastruct_sim$logkobs_sim= temp_data$logk;
+datastruct_sim$fi_sim = temp_data$fi;
+datastruct_sim$logP_sim= logP;
+datastruct_sim$pHmpKa_sim= pHmpKa;
+datastruct_sim$analyte_sim= match(temp_data$ID, unique(temp_data$ID));
+datastruct_sim$column_sim= match(temp_data$column, unique(data$column));
+
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case1a"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+
+```{r case1a-results}
+ idx = c(80,82)
+ temp_data1<-dataall%>%filter(column==4, ID%in% idx) 
+ selected_fi<-dataall%>%filter(column!=4, ID%in% idx)  %>%
+  group_by(Column_Phase, fi) %>%
+  summarise(
+    n_compounds = n(),
+    avg_logk = mean(logk),
+    .groups = "drop"
+  ) %>%
+  filter(n_compounds == 2) %>%
+  group_by(Column_Phase) %>%
+  slice_min(abs(avg_logk - 0.6), with_ties = FALSE) %>%
+  ungroup()
+ 
+ temp_data2 <- dataall %>%filter(column!=4, ID%in% idx) %>%
+  inner_join(selected_fi, by = c("Column_Phase", "fi"))%>%
+    select(-n_compounds, -avg_logk)
+ 
+temp_data = rbind(temp_data1,temp_data2)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1a"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1a"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1a"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1a"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+p2<-plotting_rank(temp_data_v2)+ ggtitle("  + One Experiment per Column")
+p2
+```
+
+
+## Case 1c and 2c. Cis-stilbene and Pyrene and Agilent PFP. Perfect knowledge
+```{r estimate-case1c, eval=FALSE}
+datastruct_sim = datastruct;
+idx = c(80,82)
+temp_data<-dataall%>%filter(ID%in% idx) 
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+pKa = analytes_df %>% filter(ID%in% idx) %>% pull(pKa..base.d)
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+pHmpKa = 3.2-pKa
+logP = descriptor_df%>% filter(ID%in% idx) %>% pull(LogP)
+nAnalytes_sim = length(unique(temp_data$ID))
+nObs_sim = length(temp_data$ID)
+datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+datastruct_sim$nObs_sim= nObs_sim;
+datastruct_sim$logkobs_sim= temp_data$logk;
+datastruct_sim$fi_sim = temp_data$fi;
+datastruct_sim$logP_sim= logP;
+datastruct_sim$pHmpKa_sim= pHmpKa;
+datastruct_sim$analyte_sim= match(temp_data$ID, unique(temp_data$ID));
+datastruct_sim$column_sim= match(temp_data$column, unique(data$column));
+
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case1c"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+
+```{r case1c-results}
+ idx = c(80,82)
+ temp_data<-dataall%>%filter(ID%in% idx) 
+
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1c"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1c"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1c"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case1c"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+p5<-plotting_rank(temp_data_v2)+ ggtitle(" All Measurments")
+p5
+```
+
+
+
+## Case 2. Cis-stilbene and Pyrene and Eclipse XDB-CN Phase
+```{r estimate-case2, eval=FALSE}
+datastruct_sim = datastruct;
+ idx = c(80,82)
+ temp_data<-dataall%>%filter(column==2, ID%in% idx) 
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+pKa = analytes_df %>% filter(ID%in% idx) %>% pull(pKa..base.d)
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+pHmpKa = 3.2-pKa
+logP = descriptor_df%>% filter(ID%in% idx) %>% pull(LogP)
+nAnalytes_sim = length(unique(temp_data$ID))
+nObs_sim = length(temp_data$ID)
+datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+datastruct_sim$nObs_sim= nObs_sim;
+datastruct_sim$logkobs_sim= temp_data$logk;
+datastruct_sim$fi_sim = temp_data$fi;
+datastruct_sim$logP_sim= logP;
+datastruct_sim$pHmpKa_sim= pHmpKa;
+datastruct_sim$analyte_sim= match(temp_data$ID, unique(temp_data$ID));
+datastruct_sim$column_sim= match(temp_data$column, unique(data$column));
+
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case2"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+
+```{r case2-results}
+idx = c(80,82)
+temp_data<-dataall%>%filter(column==2, ID%in% idx) 
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+p3<-plotting_rank(temp_data_v2)+ggtitle("  Cis-stilbene and Pyrene \n Eclipse XDB-CN Phase Measurments")
+p3
+```
+
+## Case 2a. Cis-stilbene and Pyrene and Eclipse XDB-CN Phase + 1 measurment on other Phases
+```{r estimate-case2a, eval=FALSE}
+datastruct_sim = datastruct;
+ idx = c(80,82)
+ temp_data1<-dataall%>%filter(column==2, ID%in% idx) 
+ selected_fi<-dataall%>%filter(column!=2, ID%in% idx)  %>%
+  group_by(Column_Phase, fi) %>%
+  summarise(
+    n_compounds = n(),
+    avg_logk = mean(logk),
+    .groups = "drop"
+  ) %>%
+  filter(n_compounds == 2) %>%
+  group_by(Column_Phase) %>%
+  slice_min(abs(avg_logk - 0.6), with_ties = FALSE) %>%
+  ungroup()
+ 
+ temp_data2 <- dataall %>%filter(column!=2, ID%in% idx) %>%
+  inner_join(selected_fi, by = c("Column_Phase", "fi"))%>%
+    select(-n_compounds, -avg_logk)
+temp_data = rbind(temp_data1,temp_data2)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+pKa = analytes_df %>% filter(ID%in% idx) %>% pull(pKa..base.d)
+pKa[is.na(pKa)] = -3
+pKa[pKa==100] = 10
+pHmpKa = 3.2-pKa
+logP = descriptor_df%>% filter(ID%in% idx) %>% pull(LogP)
+nAnalytes_sim = length(unique(temp_data$ID))
+nObs_sim = length(temp_data$ID)
+datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+datastruct_sim$nObs_sim= nObs_sim;
+datastruct_sim$logkobs_sim= temp_data$logk;
+datastruct_sim$fi_sim = temp_data$fi;
+datastruct_sim$logP_sim= logP;
+datastruct_sim$pHmpKa_sim= pHmpKa;
+datastruct_sim$analyte_sim= match(temp_data$ID, unique(temp_data$ID));
+datastruct_sim$column_sim= match(temp_data$column, unique(data$column));
+
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case2a"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+
+```{r case2a-results}
+idx = c(80,82)
+ temp_data1<-dataall%>%filter(column==2, ID%in% idx) 
+ selected_fi<-dataall%>%filter(column!=2, ID%in% idx)  %>%
+  group_by(Column_Phase, fi) %>%
+  summarise(
+    n_compounds = n(),
+    avg_logk = mean(logk),
+    .groups = "drop"
+  ) %>%
+  filter(n_compounds == 2) %>%
+  group_by(Column_Phase) %>%
+  slice_min(abs(avg_logk - 0.6), with_ties = FALSE) %>%
+  ungroup()
+ 
+ temp_data2 <- dataall %>%filter(column!=2, ID%in% idx) %>%
+  inner_join(selected_fi, by = c("Column_Phase", "fi"))%>%
+    select(-n_compounds, -avg_logk)
+temp_data = rbind(temp_data1,temp_data2)
+temp_data$i = match(temp_data$ID, unique(temp_data$ID))
+temp_data_all<-dataall%>%filter(ID%in% idx)
+temp_data_all$i = match(temp_data_all$ID, unique(temp_data_all$ID))
+
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2a"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2a"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2a"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case2a"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+p4<-plotting_rank(temp_data_v2)+ ggtitle("  + One Experiment per Column")
+p4
+```
+
+## Case 3. Basic analytes with pKa of 5 and 6, logP=3, and logkobs observed at fi = 0.25
+```{r estimate-case3, eval=FALSE}
+data_sim_temp = list()
+data_sim_temp$logP_sim= c(3,3);
+data_sim_temp$pHmpKa_sim= c(3.2-5,3.2-6); #basic;
+data_sim_temp$logCL=datastruct$logCL
+data_sim_temp$fi= 0.25;
+
+mod107simfixed<- cmdstan_model(here(modsimgq_model_dir, modelsimgq_name_ext))
+
+fit107simfixed  <- mod107simfixed$sample(data = data_sim_temp,
+                                      fixed_param = TRUE,
+                                          seed = 123,
+                                          chains=1,
+                                          iter_sampling = 1)
+
+logksim <- fit107simfixed$draws("logksim", format = "df")%>%
+ tidybayes::spread_draws(logksim[column,analyte])
+
+datastruct_sim = datastruct;
+ nAnalytes_sim = 2
+ datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+ datastruct_sim$nObs_sim= nAnalytes_sim*nColumns;
+ datastruct_sim$logkobs_sim= logksim$logksim;
+ datastruct_sim$fi_sim = rep(data_sim_temp$fi,nAnalytes_sim*nColumns);
+ datastruct_sim$logP_sim= data_sim_temp$logP_sim;
+ datastruct_sim$pHmpKa_sim= data_sim_temp$pHmpKa_sim
+ datastruct_sim$analyte_sim= logksim$analyte;
+ datastruct_sim$column_sim= logksim$column;
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case3"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+```{r case3-results}
+temp_data<-NULL
+temp_data_all<-NULL
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+f1<-plotting_rank(temp_data_v2) + ggtitle("  Basic Analyte, One Experiment per Column")
+f1
+```
+
+## Case 3a. Basic analytes with no measurments
+```{r estimate-case3a, eval=FALSE}
+datastruct_sim$run_estimation=0;
+ 
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case3a"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+```{r case3a-results}
+temp_data<-NULL
+temp_data_all<-NULL
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3a"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3a"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3a"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case3a"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+f2<-plotting_rank(temp_data_v2)+ ggtitle("  Basic Analyte, No Measurments")
+f2
+```
+
+## Case 4. Nautral analytes with logP=3, and logk observed at fi = 0.25
+```{r estimate-case4, eval=FALSE}
+data_sim_temp = list()
+data_sim_temp$logP_sim= c(3,3);
+data_sim_temp$pHmpKa_sim= c(10,10); #neutral;
+data_sim_temp$logCL=datastruct$logCL
+data_sim_temp$fi= 0.25;
+
+mod107simfixed<- cmdstan_model(here(modsimgq_model_dir, modelsimgq_name_ext))
+
+fit107simfixed  <- mod107simfixed$sample(data = data_sim_temp,
+                                      fixed_param = TRUE,
+                                          seed = 123,
+                                          chains=1,
+                                          iter_sampling = 1)
+
+logksim <- fit107simfixed$draws("logksim", format = "df")%>%
+ tidybayes::spread_draws(logksim[column,analyte])
+
+datastruct_sim = datastruct;
+ nAnalytes_sim = 2
+ datastruct_sim$nAnalytes_sim=nAnalytes_sim;
+ datastruct_sim$nObs_sim= nAnalytes_sim*nColumns;
+ datastruct_sim$logkobs_sim= logksim$logksim;
+ datastruct_sim$fi_sim = rep(data_sim_temp$fi,nAnalytes_sim*nColumns);
+ datastruct_sim$logP_sim= data_sim_temp$logP_sim;
+ datastruct_sim$pHmpKa_sim= data_sim_temp$pHmpKa_sim
+ datastruct_sim$analyte_sim= logksim$analyte;
+ datastruct_sim$column_sim= logksim$column;
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case4"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+```{r case4-results}
+temp_data<-NULL
+temp_data_all<-NULL
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+f3<-plotting_rank(temp_data_v2)+ ggtitle(" Neutral Analyte, One Experiment per Column")
+f3
+```
+
+## Case 4a. Nautral analytes with logP=2, and no measurments
+```{r estimate-case4a, eval=FALSE}
+
+datastruct_sim$run_estimation=0;
+ 
+init_sim <- function(){
+  list( etaStd  = t(matrix(rep(0,nAnalytes_sim*3), nrow=nAnalytes_sim)),
+        dzeta1  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta2  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim),
+        dzeta3  = matrix(rep(0,nColumns*nAnalytes_sim), nrow=nAnalytes_sim))
+}
+
+fit_sim <- mod107sim$sample(
+   data = datastruct_sim,
+   output_dir = modsim_output_dir,
+   output_basename = paste0(modelsim_name, "-case4a"),
+   init = init_sim,
+   iter_warmup = 1000,
+   iter_sampling = 500,
+   chains = 4,
+   parallel_chains = 4,
+   refresh = 100,
+   adapt_delta=0.95
+ )
+```
+
+```{r case4a-results}
+temp_data<-NULL
+temp_data_all<-NULL
+fitsim <- cmdstanr::as_cmdstan_fit(c(
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4a"), "-1.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4a"), "-2.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4a"), "-3.csv"),
+                                  paste0(modsim_output_dir, "/",  paste0(modelsim_name, "-case4a"), "-4.csv")
+                                ))
+fitsim$print()
+
+temp_data_v2 <-fitsim$draws() %>%
+  tidybayes::spread_draws(param[i,c,..])%>%
+  rename(column=c) %>%
+  left_join(column_names)
+
+plotting_i(temp_data_v2, temp_data,temp_data_all)
+plotting_pta(temp_data_v2)
+f4<-plotting_rank(temp_data_v2)+ ggtitle("  Neutral Analyte, No Measurments")
+f4
+```
+
+# Manuscript figures
+```{r manuscript-figures}
+manuscript_figure_dir <- here::here("deliv","figures","manuscript","main")
+if(!file.exists(manuscript_figure_dir)) dir.create(manuscript_figure_dir, recursive = T)
+
+supplement_figure_dir <- here::here("deliv","figures","manuscript","supplement")
+if(!file.exists(supplement_figure_dir)) dir.create(supplement_figure_dir, recursive = T)
+
+supplement_tables_dir <- here::here("deliv","tables","manuscript","supplement")
+if(!file.exists(supplement_tables_dir)) dir.create(supplement_tables_dir, recursive = T)
+
+fig1<-((p1 + p3 + plot_layout(axes = "collect")) / 
+       (p2 + p4 + plot_layout(axes = "collect")) /
+       (p5 + plot_spacer() + plot_layout(axes = "collect"))) +
+  plot_layout(axes = "collect") + 
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.title = element_text(size = 8),
+        plot.tag = element_text(size = 8))
+fig2 <- ((f2 + f4 + plot_layout(axes = "collect")) / (f1 + f3 + plot_layout(axes = "collect"))) +
+  plot_layout(axes = "collect") +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.title = element_text(size = 8),
+        plot.tag = element_text(size = 8))
+
+p1<-p1 + ylim(0.25,13.25)
+# Figures
+ggsave(here::here(manuscript_figure_dir, "column-rank-1.png"),
+       plot=fig1, width = 20, height = 20, units = "cm", dpi = 300)
+ggsave(here::here(manuscript_figure_dir, "column-rank-1.pdf"),
+       plot=fig1, width = 20, height = 20, units = "cm", dpi = 300)
+
+ggsave(here::here(manuscript_figure_dir, "column-rank-2.png"),
+       plot=fig2, width = 20, height = 20, units = "cm", dpi = 300)
+ggsave(here::here(manuscript_figure_dir, "column-rank-2.pdf"),
+       plot=fig2, width = 20, height = 20, units = "cm", dpi = 300)
+
+fig1
+fig2
+```
+
+
+# Session info
+```{r}
+sessionInfo()
+```

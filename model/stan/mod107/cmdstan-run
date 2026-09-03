@@ -1,0 +1,33 @@
+#!/bin/bash -l
+
+#SBATCH --job-name=cmdstan_conda_batch
+#SBATCH -N 1
+#SBATCH -n 48
+#SBATCH -p batch
+#SBATCH --time=48:00:00
+#SBATCH --mem=24gb
+#SBATCH --array=1-10%10 
+
+# load
+# personal CmdStan 2.38.0
+export CMDSTAN_DIR=$HOME/cmdstan/2.38.0
+export PATH=$CMDSTAN_DIR/bin:$PATH
+
+export STAN_THREADS=true
+
+# model name
+export CMDSTAN_MODEL_NAME="mod107"
+
+# paths
+export MODEL_SRC_DIR="/users/project1/pt01268/mod107/"
+cd ${CMDSTAN_DIR}
+
+# build/compile
+[ -f ${MODEL_SRC_DIR}/${CMDSTAN_MODEL_NAME} ] && echo "Model " ${CMDSTAN_MODEL_NAME} " exists." || make ${MODEL_SRC_DIR}/${CMDSTAN_MODEL_NAME}
+
+wait
+
+cd ${MODEL_SRC_DIR}
+
+${MODEL_SRC_DIR}/${CMDSTAN_MODEL_NAME} sample num_samples=500 num_warmup=1000 algorithm=hmc engine=nuts max_depth=14 adapt delta=0.95 data file=$MODEL_SRC_DIR/standata.json init=$MODEL_SRC_DIR/init-${SLURM_ARRAY_TASK_ID}.json  num_threads=${SLURM_NTASKS} output file=$MODEL_SRC_DIR/${CMDSTAN_MODEL_NAME}-${SLURM_ARRAY_TASK_ID}.csv
+wait

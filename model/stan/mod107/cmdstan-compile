@@ -1,0 +1,28 @@
+#!/bin/bash -l
+
+#SBATCH --job-name=cmdstan_conda
+#SBATCH -N 1
+#SBATCH -n 48
+#SBATCH -p test
+#SBATCH --time=00:10:00
+#SBATCH --mem=24gb
+#SBATCH --array=1%1 
+
+# load
+# personal CmdStan 2.38.0
+export CMDSTAN_DIR=$HOME/cmdstan/2.38.0
+export PATH=$CMDSTAN_DIR/bin:$PATH
+
+export STAN_THREADS=true
+
+# model name
+export CMDSTAN_MODEL_NAME="mod107"
+
+# paths
+export MODEL_SRC_DIR="/users/project1/pt01268/mod107"
+cd ${CMDSTAN_DIR}
+
+# build/compile
+[ -f ${MODEL_SRC_DIR}/${CMDSTAN_MODEL_NAME} ] && echo "Model " ${CMDSTAN_MODEL_NAME} " exists." || make ${MODEL_SRC_DIR}/${CMDSTAN_MODEL_NAME}
+
+wait

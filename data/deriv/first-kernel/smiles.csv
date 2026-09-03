@@ -1,0 +1,36 @@
+ID,Compound,smiles
+1,5-phenylpentanol,C1=CC=C(C=C1)CCCCCO
+2,trans-stilbene,C1=CC=C(C=C1)/C=C/C2=CC=CC=C2
+3,Butyl phenyl ether,CCCCOC1=CC=CC=C1
+4,Toluene,CC1=CC=CC=C1
+5,cis-chalcone,C1=CC=C(C=C1)/C=C\C(=O)C2=CC=CC=C2
+6,Ethylbenzene,CCC1=CC=CC=C1
+7,Nitrocyclohexane,C1CCC(CC1)[N+](=O)[O-]
+8,trans-chalcone,C1=CC=C(C=C1)/C=C/C(=O)C2=CC=CC=C2
+9,Butyrophenone,CCCC(=O)C1=CC=CC=C1
+10,cis-stilbene,C1=CC=C(C=C1)/C=C\C2=CC=CC=C2
+11,p-nitrophenol,C1=CC(=CC=C1[N+](=O)[O-])O
+12,Acetophenone,CC(=O)C1=CC=CC=C1
+13,Benzonitrile,C1=CC=C(C=C1)C#N
+14,Anisole,COC1=CC=CC=C1
+15,"2,3-dihydroxynaphthalene",C1=CC=C2C=C(C(=CC2=C1)O)O
+16,3-Nitrophenol,C1=CC(=CC(=C1)O)[N+](=O)[O-]
+17,"2,5-dinitrophenol",C1=CC(=C(C=C1[N+](=O)[O-])O)[N+](=O)[O-]
+18,"2,4-dinitrophenol",C1=CC(=C(C=C1[N+](=O)[O-])[N+](=O)[O-])O
+19,"1,3-dihydroxynaphthalene",C1=CC=C2C(=C1)C=C(C=C2O)O
+20,"5,5-diphenylhydantoin",C1=CC=C(C=C1)C2(C(=O)NC(=O)N2)C3=CC=CC=C3
+21,4-n-butylbenzoic acid,CCCCC1=CC=C(C=C1)C(=O)O
+22,Mefenamic acid,CC1=C(C(=CC=C1)NC2=CC=CC=C2C(=O)O)C
+23,"Quinizarin (1,4-dihydroxyanthraquinone)",C1=CC=C2C(=C1)C(=O)C3=C(C=CC(=C3C2=O)O)O
+24,4-n-heptylaniline,CCCCCCCC1=CC=C(C=C1)N
+25,4-n-hexylaniline,CCCCCCC1=CC=C(C=C1)N
+26,4-n-pentylaniline,CCCCCC1=CC=C(C=C1)N
+27,N-butylaniline,CCCCNC1=CC=CC=C1
+28,N-propylaniline,CCCNC1=CC=CC=C1
+29,N-ethylaniline,CCNC1=CC=CC=C1
+30,"4,4'-dipyridyl",C1=CN=CC=C1C2=CC=NC=C2
+31,Berberine,COC1=C(C2=C[N+]3=C(C=C2C=C1)C4=CC5=C(C=C4CC3)OCO5)OC
+32,Benzyltrimethylammonium chloride,C[N+](C)(C)CC1=CC=CC=C1
+33,Nortriptyline,CNCCC=C1C2=CC=CC=C2CCC3=CC=CC=C31
+34,Amitriptyline,CN(C)CCC=C1C2=CC=CC=C2CCC3=CC=CC=C31
+35,"2,2'-dipyridyl",C1=CC=NC(=C1)C2=CC=CC=N2

@@ -1,0 +1,14 @@
+Number,Phase,Pore Size (A),Ligand,Endcapping (?),Carbon Loading (%),"Short Column (mm x mm i.d., ?m)","Long Column (mm x mm i.d., um)",Other
+1,Agilent 300SB-C3,300,C3,no,3.1,"12.5 x 2.1, 5","150 x 2.1, 5",Diisopropyl silane
+2,Waters BEH C8,130,C8,yes,13,"5 x 2.1, 1.7","100 x 2.1, 1.7",Low silanol activity
+3,Agilent Bonus RP,80,C14,triple,9.5,"5 x 2.1, 1.8","100 x 2.1, 1.8",Diisopropyl silane Embedded amide
+4,Varian/Agilent C18-A,180,C18,yes,13.8,"10 x 2.0, 3","150 x 2.0, 3",Polar modified
+5,Waters CSH Phenyl- Hexyl,130,phenyl- hexyl,yes,14,"5 x 2.1, 3.5","100 x 2.1, 3.5",Low silanol activity
+6,Agilent Eclipse PAH,95,C18,double,14,"5 x 2.1, 1.8","100 x 2.1, 1.8",Polymeric
+7,Agilent Eclipse Plus C18,95,C18,double,9,"5 x 2.1, 1.8","100 x 2.1, 1.8",Dense monolayer
+8,Agilent Eclipse XDB-CN,80,CN,double,4.3,"12.5 x 2.1, 5","150 x 2.1, 5",Dense bonding
+9,Waters HSS PFP,100,PFP,no,7,"5 x 2.1, 3.5","100 x 2.1, 3.5",High silanol activity
+10,Agilent PFP,120,PFP,yes,5.1,"5 x 2.1, 1.9","100 x 2.1, 1.9",Superficially porous
+11,Agilent SB-C18,80,C18,no,10,"5 x 2.1, 1.8","100 x 2.1, 1.8",Diisobutyl silane
+12,Agilent SB-C8,80,C8,no,5.5,"5 x 2.1, 2.7","100 x 2.1, 2.7",Diisopropyl silane
+13,Agilent SB-Phenyl,80,phenyl,no,5.5,"5 x 2.1, 1.8","100 x 2.1, 1.8",Diisopropyl silane

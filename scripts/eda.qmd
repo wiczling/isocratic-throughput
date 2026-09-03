@@ -1,0 +1,257 @@
+---
+title: "Exploratory data analysis"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+```{r knitr-setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+```
+
+# Introductions
+
+Exploratory data analysis
+
+# Setup
+```{r setup, message=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(GGally)
+library(reshape2)
+library(pracma)
+library(here)
+library(magick)
+library(ggcorrplot)
+library(stringr)
+select<-dplyr::select
+filter<-dplyr::filter
+set.seed(10271998) 
+source("helper-functions-v100.R")
+```
+
+```{r settings}
+data_deriv_dir = here::here("data","deriv")
+```
+
+```{r set-theme, include = FALSE}
+theme_set(theme_bw())
+theme_update(
+  axis.title = element_text(size = 10, face = "bold"), 
+  axis.text = element_text(size = 8), 
+  legend.title = element_blank(),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.4, "cm"),
+  strip.text = element_text(size = 8),
+  legend.position = "bottom",
+  panel.grid.minor = element_blank()
+)
+```
+## Load data
+```{r load-data, message=FALSE, warning=FALSE}
+data <-read.csv(here(data_deriv_dir, "data.csv"), header = TRUE)%>%
+  mutate(Compound = HSM3_Name) %>%
+  mutate(fi = phi/100,
+         logk = log10(k))%>%
+  filter(!is.na(logk)) %>%
+  group_by(fi, Compound, Column_Phase) %>%
+  summarise(logk = mean(logk)) %>%
+  ungroup()%>%
+   mutate(ID = match(Compound, unique(Compound)),
+         column = match(Column_Phase, unique(Column_Phase)))
+# for correlation plots
+data_wide <- data %>%
+  group_by(ID, fi, Compound, Column_Phase) %>%
+  summarise(logk = mean(logk)) %>%
+   pivot_wider(names_from = Column_Phase, values_from = logk)
+
+analytes_names = data%>%distinct(ID, .keep_all = T)%>%select(ID, Compound)
+column_names = data%>%distinct(column, .keep_all = T)%>%select(column,Column_Phase)
+
+smiles <- read.csv(here(data_deriv_dir,"smiles.csv"), sep = ",", header = TRUE)%>%
+  select(-ID)%>%
+  left_join(analytes_names)%>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+fg_df = read.csv(file = here(data_deriv_dir,"smarts_functional_groups.csv"), header = TRUE)%>%
+  select(-id1,-id2) %>%
+  rename(smiles=SMILES) %>%
+  left_join(smiles,)%>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+descriptor_df <- read.csv(file = here(data_deriv_dir,"descriptor_df.csv"), header = TRUE)%>%
+  rename(smiles=SMILES) %>%
+  left_join(smiles) %>%arrange(ID)%>%distinct(ID, .keep_all = T)
+
+column_df = read.csv(file = here(data_deriv_dir,"columns.csv"), header = TRUE)%>%
+  mutate(Column_Phase = str_remove(Phase, "Waters|Agilent"))%>%
+  mutate(Column_Phase = str_remove(Column_Phase, " "))%>%
+  mutate(Column_Phase = case_when(Column_Phase == "Varian/C18-A" ~ "C18-A",
+                                  Column_Phase == "CSH Phenyl- Hexyl"~"CSH Phenyl-Hexyl",
+                                 .default = Column_Phase)) %>%
+  left_join(column_names) %>%
+  rename("carbon_loading" = "Carbon.Loading....",
+         "Endcapping" = "Endcapping...."
+         ) %>%
+  arrange(column)
+
+
+analytes_df = read.csv(file = here(data_deriv_dir,"analytes.csv"), header = TRUE)
+```
+
+## Prepare data
+```{r prepare-data, message=FALSE, warning=FALSE}
+ functional_groups = fg_df%>%select(where(~ is.character(.) || !all(. == 0, na.rm = TRUE))) %>%
+   select(-smiles, -Anion, -Kation, -Ammonium, -Compound )
+ functional_groups_names<- colnames(functional_groups)
+ totalnrgroups <- summarise_each(functional_groups, funs(sum))
+ 
+  analytes_df <- analytes_df %>%
+   mutate(charge = if_else(pKa..base.d>3.2, 1, 0)) %>%
+      mutate(charge =if_else(is.na(charge), 0, charge))
+```
+
+# Some plots
+## Raw data. logk
+```{r raw-data-scatter-plots-logk, message=FALSE, warning=FALSE}
+figure_S1 <- ggplot(data, aes(x=fi, y=logk, color=Compound)) + 
+  geom_line() + 
+  facet_wrap(.~Column_Phase)+
+  labs(x = "\u03C6", y = expression(logk[obs])) + 
+  coord_cartesian(xlim=c(0,1))+
+  theme(legend.position="none") 
+
+figure_S1
+```
+
+```{r raw-data-scatter-plots-logk-charge, message=FALSE, warning=FALSE}
+p1 <- data %>%
+  left_join(analytes_df%>%select(ID,charge)) %>%
+  ggplot(aes(x=fi, y=logk, group = Compound, color=as.factor(charge))) + 
+  geom_line() + 
+  facet_wrap(.~Column_Phase)+
+  labs(x = "\u03C6", y = expression(logk[obs])) + 
+  coord_cartesian(xlim=c(0,1),ylim=c(-1,2))+
+  scale_color_manual(
+    labels = c("nautral", "charged"),
+    values = c("0" = "gray", "1" = "red")
+  )
+
+p1
+```
+
+```{r raw-data-by-analyte-logk, message=FALSE, warning=FALSE}
+id_ordered <- analytes_df %>%
+arrange(`pKa..base.d`) %>%
+  pull(ID)
+
+ngrp = 15 
+analytes_idx = id_ordered
+groups <- split(analytes_idx, ceiling(seq_along(analytes_idx) / (length(analytes_idx) / ngrp)))
+
+plotting_i = function(i, groups, data) {
+  data %>% 
+  filter(ID %in% groups[[i]])  %>%
+  ggplot(aes(x=fi, y=logk, color=Column_Phase)) + 
+  geom_line() + 
+  facet_wrap(.~Compound)+
+  labs(x = "\u03C6", y = expression(logk[obs]), color = "column")
+}
+
+map(1:ngrp, \(x) plotting_i(x, groups, data)) 
+```
+
+## Correlations
+```{r raw-data-corr-plots, message=FALSE, warning=FALSE}
+p1<-data_wide[,4:16]%>% 
+  ggpairs(lower = list(continuous = wrap("points", alpha = 0.3, size = 0.5)),
+   upper = list(continuous = "blank"),
+  diag  = list(continuous = "densityDiag"))+
+  theme(
+    axis.text = element_text(size = 6),
+    strip.text.x = element_text(angle = 90, size = 6),
+    strip.text.y = element_text(angle = 1,  size = 6)
+  )
+
+p1
+```
+
+## logP and Molecular mass distribution
+```{r hist-MW-logP,message=FALSE, warning=FALSE}
+p1<-ggplot(data=descriptor_df)+
+    geom_histogram(aes(x=MolWt))+
+  xlab("Molecular mass")+
+  ylab("Count")
+
+p2<-ggplot(data=descriptor_df)+
+  geom_histogram(aes(x=LogP))+
+  xlab("logP (rdkit)")+
+  ylab("Count")
+
+p1+p2
+```
+
+## Initial estimates
+```{r initial-estimates}
+init_aprox <- data %>%
+  group_by(Compound, Column_Phase) %>%
+  summarise(
+    S1 = if_else(n() == 1,-16,polyfit(fi / (1 + 2 * fi), logk, 1)[1]),
+    logkw = if_else(n() == 1,polyfit(-16 * fi / (1 + 2 * fi), logk, 0), 
+                             polyfit(fi / (1 + 2 * fi), logk, 1)[2]),
+    S2 = 2) %>%
+  ungroup() %>%
+  select(Compound, Column_Phase, logkw, S2, S1) %>%
+  mutate(S1 = -S1 / (1 + 2))
+
+init_aprox = init_aprox %>%left_join(descriptor_df%>%select(Compound,MolWt,LogP))
+```
+
+### Visualize
+```{r initial-estimates-plot}
+p1 <- init_aprox %>%
+  left_join(analytes_names) %>%
+  left_join(analytes_df%>%select(ID,charge)) %>%
+  left_join(column_names) %>%
+  ggplot(aes(x=logkw, y=S1, color = as.factor(charge)))+
+  geom_point()+
+  labs(color = "charge") +
+  facet_wrap(.~Column_Phase)+
+  scale_color_manual(
+    labels = c("nautral", "charged"),
+    values = c("0" = "gray", "1" = "red")
+  )
+p1
+
+```
+
+# Manuscript figures
+```{r manuscript-figures}
+manuscript_supplement_dir <- here::here("deliv","figures","manuscript","supplement")
+if(!file.exists(manuscript_supplement_dir)) dir.create(manuscript_supplement_dir, recursive = T)
+
+ggsave(here::here(manuscript_supplement_dir, "raw-data.png"),
+       plot=figure_S1, width = 20, height = 20, units = "cm", dpi = 300)
+ggsave(here::here(manuscript_supplement_dir, "raw-data.pdf"),
+       plot=figure_S1, width = 20, height = 20, units = "cm", dpi = 300)
+```
+
+# Session info
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,88 @@
+TableNo,Training Set,Source,MW,Ea,Sa,Aa,Ba,log Pb,MRb,Ob,Vb,Oblate Spheroid Minor Axisc,pKa (acid)d,pKa (base)d,ID,Names,ACD
+1,"1,3-dihydroxynaphthalene",Sigma-Aldrich,160.17,1.62,1.34,0.82,0.51,1.97,45.896,1.2411,96.707,1.397,9.08,,1,"1,3-dihydroxynaphthalene",0
+2,"1,3-dinitrobenzene",Sigma-Aldrich,168.11,1.11,1.55,0,0.32,1.49,40.707,1.2655,103.252,1.382,,,2,"1,3-dinitrobenzene",0
+3,"1,4-dichlorobenzene",Sigma-Aldrich,147,0.86,0.53,0,0.05,3.415,35.668,1.2406,97.987,1.404,,,3,"1,4-dichlorobenzene",0
+4,1-naphthol,Matheson Coleman & Bell,144.17,1.46,1.31,0.41,0.35,2.645,44.202,1.2091,89.81,1.426,9.5,,4,1-naphthol,0
+5,1-naphthylamine,TCI,143.19,1.62,1.34,0.27,0.41,2.235,47.209,1.2335,94.544,1.401,,3.9,5,1-naphthylamine,0
+6,1-nitropropane,Aldrich,89.09,0.24,0.54,0,0.29,1.198,21.86,1.1995,77.535,1.377,8.8,,6,1-nitropropane,0
+7,"2,2'-dipyridyl",Sigma-Aldrich,156.18,1.36,1.49,0,0.73,1.544,46.136,1.3235,120.086,1.355,,4.4,7,"2,2'-dipyridyl",0
+8,"2,3-dihydroxynaphthalene",Sigma-Aldrich,160.17,1.64,1.34,0.82,0.52,2.208,45.896,1.2951,118.929,1.396,9.12,,8,"2,3-dihydroxynaphthalene",0
+9,"2,4-dinitrophenol",Sigma-Aldrich,184.11,1.3,1.56,0.06,0.5,1.54,42.402,1.2721,109.337,1.397,4.2,,9,"2,4-dinitrophenol",0
+57,"2,5-dinitrophenol",Sigma-Aldrich,184.11,1.3,1.75,0.41,0.5,1.75,42.402,1.2764,110.034,1.392,5.2,,10,"2,5-dinitrophenol",0
+10,2-naphthol,TCI,144.17,1.54,1.13,0.62,0.34,2.865,44.202,1.2209,89.608,1.4,9.6,,11,2-naphthol,0
+,,,,,,,,,,,,,2.19,,12,2-nitrobenzoicacid,1
+58,3-nitrophenol,Sigma-Aldrich,139.11,1.01,1.48,0.68,0.39,2.003,35.077,1.2164,78.291,1.347,8.6,,13,3-Nitrophenol,0
+,,,,,,,,,,,,,,3.27,14,"4,4'-dipyridyl",1
+59,4-chlorotoluene,TCI,126.58,0.76,0.58,0,0.12,3.33,35.904,1.2672,99.491,1.362,,,15,4-chlorotoluene,0
+,,,,,,,,,,,,,,100,16,Benzyltrimethylammonium chloride,1
+34,dimethyl fumarate,Acros Organics,144.13,0.34,0.99,0,0.77,0.166,34.145,1.3411,109.327,1.287,,,17,DimethylFumarate,0
+61,Lin-Ee,BMS,243.28,1.72,1.64,0,0.9,2.667,67.029,1.3501,197.808,1.553,,3.93,18,Lin-E,0
+24,Lin-cis-D 1e,BMS,287.33,1.57,1.75,0.46,0.72,3.635,77.202,1.3868,239.498,1.593,4.92,3.98,19,Lin-cis-D-1,0
+27,Lin-trans-De,BMS,287.33,1.57,1.75,0.46,0.72,3.608,77.202,1.3944,241.696,1.585,4.92,3.98,20,Lin-trans-D,0
+73,"N,N-diethylbenzamide",Aldrich,177.24,0.84,1.08,0,0.97,1.25,53.928,1.3371,167.266,1.49,,-0.4,21,"N,N-diethylbenzamide",0
+39,"N,N-dimethylbenzamide",Aldrich,149.19,0.91,1.32,0,0.79,0.62,44.432,1.3097,132.063,1.421,,-0.4,22,"N,N-dimethylbenzamide",0
+,,,,,,,,,,,,,,,23,N-benzylformamide,1
+40,N-butylaniline,Sigma-Aldrich,149.23,0.88,0.71,0.19,0.57,2.772,50.125,1.3711,147.713,1.378,,5.1,24,N-butylaniline,0
+41,N-ethylaniline,Sigma-Aldrich,121.18,0.88,0.71,0.13,0.57,2.21,41,1.3046,112.924,1.357,,5.1,25,N-ethylaniline,0
+74,N-propylaniline,Sigma-Aldrich,135.21,0.88,0.71,0.19,0.57,2.45,45.524,1.3383,130.328,1.369,,5.1,26,N-propylaniline,0
+43,nitrocyclohexane,Sigma-Aldrich,129.16,0.5,0.72,0,0.29,1.921,33.601,1.1798,119.681,1.641,8.2,,27,Nitrocyclohexane,0
+17,acetophenone,Sigma-Aldrich,120.15,0.75,1,0,0.5,1.625,36.461,1.2602,101.698,1.385,,,28,acetophenone,0
+19,anisole,Sigma-Aldrich,108.14,0.66,0.67,0,0.31,2.077,32.521,1.254,93.076,1.355,,,29,anisole,0
+21,benzonitrile,Sigma-Aldrich,103.12,0.8,1.09,0.02,0.27,1.56,31.796,1.2407,81.855,1.322,,,30,benzonitrile,0
+31,butyrophenone,Sigma-Aldrich,148.2,0.75,0.99,0,0.5,2.234,45.689,1.3377,135.141,1.387,,,31,butyrophenone,0
+,,,,,,,,,,,,,,0.52,32,caffeine,1
+70,chlorobenzene,Aldrich,112.56,0.74,0.68,0,0.09,2.584,30.863,1.2171,83.705,1.376,,,33,chlorobenzene,0
+36,ethylbenzene,Sigma-Aldrich,106.17,0.63,0.48,0,0.17,3.15,35.7,1.2584,103.78,1.397,,,34,ethylbenzene,0
+75,o-cresol,TCI,108.14,0.76,0.82,0.41,0.34,1.993,32.793,1.2432,91.129,1.365,10,,35,o-cresol,0
+76,p-cresol,TCI,108.14,0.82,0.97,0.53,0.32,2.016,32.793,1.2614,91.844,1.336,10,,36,p-cresol,0
+47,p-nitrophenol,Alfa-Aesar,139.11,1.06,1.57,0.53,0.39,1.988,35.077,1.2169,78.266,1.346,7.2,,37,p-nitrophenol,0
+48,p-xylene,JT Baker,106.17,0.65,0.63,0,0.18,3.15,36.14,1.2865,102.049,1.341,,,38,p-xylene,0
+46,phenol,Sigma-Aldrich,94.11,0.77,0.81,0.41,0.29,1.503,27.752,1.1474,59.037,1.37,10,,39,phenol,0
+,,,,,,,,,,,,,,5.23,40,pyridine,1
+54,toluene,Sigma-Aldrich,92.14,0.63,0.62,0,0.16,2.588,31.099,1.2366,86.348,1.353,,,41,toluene,0
+60,4-n-hexylaniline,TCI,177.29,0.92,0.94,0.27,0.39,3.748,58.805,1.4242,182.541,1.401,,4.9,42,4-n-hexylaniline,0
+33,cortisone,Sigma-Aldrich,360.44,1.94,3.5,0.55,1.99,1.46,96.706,,465,,13.03,,43,cortisone,0
+77,prednisone,Sigma-Aldrich,358.43,2.11,3.45,0.55,1.94,0.798,97.8,,455,,13.03,,44,prednisone,0
+13,4-n-pentylaniline,Sigma-Aldrich,163.26,0.92,0.94,0.27,0.39,3.292,54.204,1.3925,165.159,1.399,,4.9,45,4-n-pentylaniline,0
+14,"5,5-diphenylhydantoin",Sigma-Aldrich,252.27,1.96,2.14,0.78,1.25,1.98,69.931,1.3459,157.787,1.447,8.3,,46,"5,5-diphenylhydantoin",0
+,,,,,,,,,,,,,,8.12,47,Risperidone,1
+15,5-phenylpentanol,Sigma-Aldrich,164.24,0.82,0.95,0.36,0.65,2.94,51.432,1.3945,113.033,1.23,15.87,,48,5-phenylpentanol,0
+22,berberine,Sigma-Aldrich,336.36,,,,,,,1.5272,255.039,1.427,,100,49,berberine,0
+11,4-n-butylbenzoic acid,Sigma-Aldrich,178.23,0.77,0.83,0.72,0.42,3.006,51.79,1.3797,160.901,1.405,4.1,,50,4-n-butylbenzoic acid,0
+12,4-n-heptylaniline,Sigma-Aldrich,191.31,0.92,0.94,0.27,0.39,4.204,63.406,1.4548,199.909,1.403,,4.9,51,4-n-heptylaniline,0
+30,butyl phenyl ether,Sigma-Aldrich,150.22,0.66,0.64,0,0.4,3.253,46.394,1.3772,143.643,1.356,,,52,Butyl phenyl ether,0
+64,Lin-cis-Fe,BMS,301.36,1.57,1.59,0.57,0.79,4.681,81.777,1.3924,257.671,1.623,4.92,3.98,53,Lin-cis-F,0
+65,Lin-cis-Ie,BMS,420.52,2.39,2.83,0.53,1.46,4.955,119.071,1.5235,373.051,1.625,13.8,4.07,54,Lin-cis-I,0
+18,amitriptyline,Sigma-Aldrich,277.4,1.72,1.53,0,1.05,4.424,92.388,1.4817,257.746,1.49,,8.8,55,amitriptyline,0
+,,,,,,,,,,,,,,7.29,56,dasatinib,1
+44,nortriptyline,Sigma-Aldrich,263.38,1.78,1.53,0.09,1.07,4.249,87.094,1.4761,240.269,1.463,,9.9,57,nortriptyline,0
+42,nicardipine,Sigma-Aldrich,479.53,2.26,3.56,0.26,1.95,2.549,135.193,,648,,,7.12,58,Nicardipine,0
+53,rosuvastatin,Sigma-Aldrich,481.54,2.63,3.36,1.07,2.53,0.594,,1.5485,391.569,1.617,4.33,1.53,59,Rosuvastatin,0
+71,cis-chalcone,Prepared from trans-chalcone,208.26,1.65,1.41,0,0.6,3.08,66.877,1.4153,169.147,1.378,,,60,cis-chalcone,0
+35,dipropyl phthalate,Acros Organics,250.29,0.66,1.27,0,0.91,3.323,67.657,1.4489,218.289,1.453,,,61,dipropylphthalate,0
+72,fenoprofen,Sigma-Aldrich,242.27,1.47,1.69,0.57,0.84,3.639,68.181,1.4357,198.615,1.425,4.27,,62,fenoprofen,0
+50,quinizarin,Sigma-Aldrich,240.21,2.06,2.11,0.82,0.89,1.64,64.539,1.3532,162.188,1.449,10,,63,quinizarin,0
+,,,,,,,,,,,,,,5.62,64,Lin-cis-G,1
+28,Lin-cis-He,BMS,396.88,2.44,2.13,0.38,0.85,5.415,108.504,1.5383,316.945,1.519,13.12,4.07,65,Lin-cis-H,0
+68,Lin-cis-Je,BMS,436.97,2.62,2.53,0.38,1.18,6.035,124.073,1.6071,372.795,1.517,13.13,5.07,66,Lin-cis-J,0
+45,phenanthrene,Aldrich,178.23,2.07,1.25,0,0.22,4.515,58.958,1.3287,141.951,1.424,,,67,Phenanthrene,0
+16,aceclofenac,Sigma-Aldrich,354.18,2,2.48,0.47,0.98,3.646,86.315,1.4954,253.323,1.463,4.7,,68,aceclofenac,0
+20,aripiprazole,Thermo Scientific,448.38,2.65,3.32,0.38,1.88,4.547,122.555,1.6434,363.772,1.463,13.29,7.6,69,aripiprazole,0
+38,mefenamic acid,Sigma-Aldrich,241.29,1.74,1.91,0.69,0.57,5.37,71.385,1.4222,193.444,1.431,4.3,-1.68,70,mefenamic acid,0
+52,reserpine,Sigma-Aldrich,608.68,3.09,4.83,0.46,2.99,2.693,160.919,,760,,12.08,6.53,71,reserpine,0
+78,trans-chalcone,Alfa Aesar,208.26,1.65,1.41,0,0.6,3.08,66.877,1.4313,168.37,1.355,,,72,trans-chalcone,0
+26,Lin-cis-A e,BMS,432.49,2.46,3.13,0,1.29,5.196,117.375,1.472,363.383,1.685,,4.07,73,Lin-cis-A,0
+62,Lin-cis-B 1e,BMS,446.51,2.53,2.97,0,1.37,5.762,121.949,1.5046,378.158,1.659,,4.07,74,Lin-cis-B-1,0
+23,Linrodostat 1e,BMS,410.91,2.44,1.97,0.38,0.92,5.981,113.078,1.5378,335.197,1.549,13.12,4.07,75,Lin-cis-C-1,0
+23,Linrodostat 1e,BMS,410.91,2.44,1.97,0.38,0.92,5.981,113.078,1.5378,335.197,1.549,13.12,4.07,76,Lin-cis-C-2,0
+29,Lin-trans-Ae,BMS,432.49,2.46,3.13,0,1.29,5.196,117.375,1.4768,366.595,1.683,,4.07,77,Lin-trans-A,0
+66,Lin-trans-Ce,BMS,410.91,2.44,1.97,0.38,0.92,5.981,113.078,1.5375,335.984,1.55,13.12,4.07,78,Lin-trans-C,0
+56,triphenylene,Acros Organics,228.29,2.94,1.33,0,0.27,5.226,75.409,1.3785,177.043,1.452,,,79,Triphenylene,0
+32,cis-stilbene,Sigma-Aldrich,180.25,1.65,1.18,0,0.37,4.81,61.513,1.3682,154.881,1.404,,,80,cis-stilbene,0
+,,,,,,,,,,,,,,,81,o-Terphenyl,1
+49,pyrene,City Chemical,202.25,2.85,1.43,0,0.26,5.083,66.723,1.3365,155.048,1.454,,,82,pyrene,0
+55,trans-stilbene,Sigma-Aldrich,180.25,1.65,1.18,0,0.37,4.81,61.513,1.3998,152.892,1.353,,,83,trans-stilbene,0
+,,,,,,,,,,,,,,,84,"2,2'-dinaphthylether",1
+67,Lin-trans-Be,BMS,446.51,2.53,2.97,0,1.37,5.762,121.949,1.4133,384.493,1.816,,4.07,85,Lin-trans-BMS-B,0
+51,regorafenib,SYNkinase,482.82,2.26,2.93,0.98,1.82,3.916,110.625,1.6741,316.469,1.366,12.73,2.14,86,Regorafenib,0
+,,,,,,,,,,,,,4.46,,87,Glecaprevir,1

@@ -1,0 +1,438 @@
+::: {.panel-tabset}
+
+## Analyte 1 
+```{r}
+plotting_i(1, temp_data, data)
+```
+
+## Analyte 2 
+```{r}
+plotting_i(2, temp_data, data)
+```
+
+## Analyte 3 
+```{r}
+plotting_i(3, temp_data, data)
+```
+
+## Analyte 4 
+```{r}
+plotting_i(4, temp_data, data)
+```
+
+## Analyte 5 
+```{r}
+plotting_i(5, temp_data, data)
+```
+
+## Analyte 6 
+```{r}
+plotting_i(6, temp_data, data)
+```
+
+## Analyte 7 
+```{r}
+plotting_i(7, temp_data, data)
+```
+
+## Analyte 8 
+```{r}
+plotting_i(8, temp_data, data)
+```
+
+## Analyte 9 
+```{r}
+plotting_i(9, temp_data, data)
+```
+
+## Analyte 10 
+```{r}
+plotting_i(10, temp_data, data)
+```
+
+## Analyte 11 
+```{r}
+plotting_i(11, temp_data, data)
+```
+
+## Analyte 12 
+```{r}
+plotting_i(12, temp_data, data)
+```
+
+## Analyte 13 
+```{r}
+plotting_i(13, temp_data, data)
+```
+
+## Analyte 14 
+```{r}
+plotting_i(14, temp_data, data)
+```
+
+## Analyte 15 
+```{r}
+plotting_i(15, temp_data, data)
+```
+
+## Analyte 16 
+```{r}
+plotting_i(16, temp_data, data)
+```
+
+## Analyte 17 
+```{r}
+plotting_i(17, temp_data, data)
+```
+
+## Analyte 18 
+```{r}
+plotting_i(18, temp_data, data)
+```
+
+## Analyte 19 
+```{r}
+plotting_i(19, temp_data, data)
+```
+
+## Analyte 20 
+```{r}
+plotting_i(20, temp_data, data)
+```
+
+## Analyte 21 
+```{r}
+plotting_i(21, temp_data, data)
+```
+
+## Analyte 22 
+```{r}
+plotting_i(22, temp_data, data)
+```
+
+## Analyte 23 
+```{r}
+plotting_i(23, temp_data, data)
+```
+
+## Analyte 24 
+```{r}
+plotting_i(24, temp_data, data)
+```
+
+## Analyte 25 
+```{r}
+plotting_i(25, temp_data, data)
+```
+
+## Analyte 26 
+```{r}
+plotting_i(26, temp_data, data)
+```
+
+## Analyte 27 
+```{r}
+plotting_i(27, temp_data, data)
+```
+
+## Analyte 28 
+```{r}
+plotting_i(28, temp_data, data)
+```
+
+## Analyte 29 
+```{r}
+plotting_i(29, temp_data, data)
+```
+
+## Analyte 30 
+```{r}
+plotting_i(30, temp_data, data)
+```
+
+## Analyte 31 
+```{r}
+plotting_i(31, temp_data, data)
+```
+
+## Analyte 32 
+```{r}
+plotting_i(32, temp_data, data)
+```
+
+## Analyte 33 
+```{r}
+plotting_i(33, temp_data, data)
+```
+
+## Analyte 34 
+```{r}
+plotting_i(34, temp_data, data)
+```
+
+## Analyte 35 
+```{r}
+plotting_i(35, temp_data, data)
+```
+
+## Analyte 36 
+```{r}
+plotting_i(36, temp_data, data)
+```
+
+## Analyte 37 
+```{r}
+plotting_i(37, temp_data, data)
+```
+
+## Analyte 38 
+```{r}
+plotting_i(38, temp_data, data)
+```
+
+## Analyte 39 
+```{r}
+plotting_i(39, temp_data, data)
+```
+
+## Analyte 40 
+```{r}
+plotting_i(40, temp_data, data)
+```
+
+## Analyte 41 
+```{r}
+plotting_i(41, temp_data, data)
+```
+
+## Analyte 42 
+```{r}
+plotting_i(42, temp_data, data)
+```
+
+## Analyte 43 
+```{r}
+plotting_i(43, temp_data, data)
+```
+
+## Analyte 44 
+```{r}
+plotting_i(44, temp_data, data)
+```
+
+## Analyte 45 
+```{r}
+plotting_i(45, temp_data, data)
+```
+
+## Analyte 46 
+```{r}
+plotting_i(46, temp_data, data)
+```
+
+## Analyte 47 
+```{r}
+plotting_i(47, temp_data, data)
+```
+
+## Analyte 48 
+```{r}
+plotting_i(48, temp_data, data)
+```
+
+## Analyte 49 
+```{r}
+plotting_i(49, temp_data, data)
+```
+
+## Analyte 50 
+```{r}
+plotting_i(50, temp_data, data)
+```
+
+## Analyte 51 
+```{r}
+plotting_i(51, temp_data, data)
+```
+
+## Analyte 52 
+```{r}
+plotting_i(52, temp_data, data)
+```
+
+## Analyte 53 
+```{r}
+plotting_i(53, temp_data, data)
+```
+
+## Analyte 54 
+```{r}
+plotting_i(54, temp_data, data)
+```
+
+## Analyte 55 
+```{r}
+plotting_i(55, temp_data, data)
+```
+
+## Analyte 56 
+```{r}
+plotting_i(56, temp_data, data)
+```
+
+## Analyte 57 
+```{r}
+plotting_i(57, temp_data, data)
+```
+
+## Analyte 58 
+```{r}
+plotting_i(58, temp_data, data)
+```
+
+## Analyte 59 
+```{r}
+plotting_i(59, temp_data, data)
+```
+
+## Analyte 60 
+```{r}
+plotting_i(60, temp_data, data)
+```
+
+## Analyte 61 
+```{r}
+plotting_i(61, temp_data, data)
+```
+
+## Analyte 62 
+```{r}
+plotting_i(62, temp_data, data)
+```
+
+## Analyte 63 
+```{r}
+plotting_i(63, temp_data, data)
+```
+
+## Analyte 64 
+```{r}
+plotting_i(64, temp_data, data)
+```
+
+## Analyte 65 
+```{r}
+plotting_i(65, temp_data, data)
+```
+
+## Analyte 66 
+```{r}
+plotting_i(66, temp_data, data)
+```
+
+## Analyte 67 
+```{r}
+plotting_i(67, temp_data, data)
+```
+
+## Analyte 68 
+```{r}
+plotting_i(68, temp_data, data)
+```
+
+## Analyte 69 
+```{r}
+plotting_i(69, temp_data, data)
+```
+
+## Analyte 70 
+```{r}
+plotting_i(70, temp_data, data)
+```
+
+## Analyte 71 
+```{r}
+plotting_i(71, temp_data, data)
+```
+
+## Analyte 72 
+```{r}
+plotting_i(72, temp_data, data)
+```
+
+## Analyte 73 
+```{r}
+plotting_i(73, temp_data, data)
+```
+
+## Analyte 74 
+```{r}
+plotting_i(74, temp_data, data)
+```
+
+## Analyte 75 
+```{r}
+plotting_i(75, temp_data, data)
+```
+
+## Analyte 76 
+```{r}
+plotting_i(76, temp_data, data)
+```
+
+## Analyte 77 
+```{r}
+plotting_i(77, temp_data, data)
+```
+
+## Analyte 78 
+```{r}
+plotting_i(78, temp_data, data)
+```
+
+## Analyte 79 
+```{r}
+plotting_i(79, temp_data, data)
+```
+
+## Analyte 80 
+```{r}
+plotting_i(80, temp_data, data)
+```
+
+## Analyte 81 
+```{r}
+plotting_i(81, temp_data, data)
+```
+
+## Analyte 82 
+```{r}
+plotting_i(82, temp_data, data)
+```
+
+## Analyte 83 
+```{r}
+plotting_i(83, temp_data, data)
+```
+
+## Analyte 84 
+```{r}
+plotting_i(84, temp_data, data)
+```
+
+## Analyte 85 
+```{r}
+plotting_i(85, temp_data, data)
+```
+
+## Analyte 86 
+```{r}
+plotting_i(86, temp_data, data)
+```
+
+## Analyte 87 
+```{r}
+plotting_i(87, temp_data, data)
+```
+
+:::

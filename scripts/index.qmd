@@ -1,0 +1,39 @@
+---
+title: "An Interpretable Multilevel Model of Isocratic Retention Explaining Between-Analyte and Between-Column Variability"
+author:
+  - name: "Paweł Wiczling"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: today
+date-format: long
+format:
+  html:
+    toc: true
+    code-fold: true
+execute:
+  warning: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Exploratory Data Analysis
+
+1.  [Structures](print-analytes-structures.html "Structures")
+
+2.  [Functional Groups](functional-groups-rdkit.html "Functional groups")
+
+3.  [Exploratory Plots](eda.html "EDA")
+
+4.  [Simulations](simulations.html "Simulations")
+
+# Results
+
+1. [Final Model](model-development-107.html "Final Model")
+
+2. [Decision Making and ranking](model-107-decision-making.html "Decision Making and Column Ranking") 
+
+# Licenses {.unnumbered}
+
+-   Code & copy; 2026, Paweł Wiczling, licensed under BSD-3.
+-   Text & copy; 2026, Paweł Wiczling, licensed under CC-BY-NC 4.0.

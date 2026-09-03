@@ -1,0 +1,262 @@
+---
+title: |
+  | Supporting Information for:
+  | An Interpretable Multilevel Model of Isocratic Retention Explaining Between-Analyte and Between-Column Variability
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  pdf:
+    pdf-engine: xelatex
+    toc: true
+    number-sections: true
+    colorlinks: true
+    fig-width: 7
+    fig-height: 7
+    keep-tex: true
+    template-partials: 
+      - title.tex
+    include-in-header:
+      text: |
+        \usepackage[noblocks]{authblk}
+        \renewcommand*{\Authsep}{, }
+        \renewcommand*{\Authand}{, }
+        \renewcommand*{\Authands}{, }
+        \renewcommand\Affilfont{\small}
+        \setlength{\tabcolsep}{3pt}
+        \usepackage{longtable}
+        \usepackage{array}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, message=FALSE, error=FALSE, warning=FALSE, echo=FALSE, comment=NA, out.width='95%')
+```
+
+```{r, include=FALSE}
+library(dplyr)
+library(kableExtra)
+
+```
+
+{{< pagebreak >}}
+
+# Table S1. Summary of the MCMC simulations of the marginal posterior distributions of population-level model parameters. 
+
+Summary of posterior parameter estimates. The table reports posterior summaries for each parameter, including measures of central tendency (mean, median), uncertainty (standard deviation, median absolute deviation, and 5th/95th percentiles), and MCMC diagnostic statistics (rhat, bulk effective sample size, and tail effective sample size).
+
+```{r summary1}
+df <- read.csv("../deliv/tables/manuscript/supplement/parameter-estimates.csv", header = TRUE)    
+
+df %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))  %>%
+    mutate(across(median:mad, ~ round(.x, 3)))  %>%
+  kableExtra::kbl(
+    escape = TRUE,
+    longtable = TRUE,
+    format = "latex"
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = "repeat_header",
+    font_size = 7
+  )
+```
+
+{{< pagebreak >}}
+
+
+```{r summary2}
+df <- read.csv("../deliv/tables/manuscript/supplement/parameter-estimates-kappa.csv", header = TRUE)    
+
+df %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))  %>%
+    mutate(across(median:mad, ~ round(.x, 3)))  %>%
+  kableExtra::kbl(
+    escape = TRUE,
+    longtable = TRUE,
+    format = "latex"
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = "repeat_header",
+    font_size = 7
+  )
+```
+
+{{< pagebreak >}}
+
+```{r summary3}
+df <- read.csv("../deliv/tables/manuscript/supplement/parameter-estimates-omegad.csv", header = TRUE)    
+
+df %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))  %>%
+    mutate(across(median:mad, ~ round(.x, 3)))  %>%
+  kableExtra::kbl(
+    escape = TRUE,
+    longtable = TRUE,
+    format = "latex"
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = "repeat_header",
+    font_size = 7
+  )
+```
+
+{{< pagebreak >}}
+
+# Table S2. Column Characteristic
+
+```{r columns}
+column_df <- data.frame(
+  No = 1:13,
+  Phase = c(
+    "Agilent 300SB-C3", "Agilent Eclipse XDB-CN", "Agilent SB-Phenyl",
+    "Agilent PFP", "Agilent Bonus RP", "Varian/Agilent C18-A",
+    "Waters CSH Phenyl-Hexyl", "Waters HSS PFP", "Agilent SB-C8",
+    "Waters BEH C8", "Agilent Eclipse PAH", "Agilent Eclipse Plus C18",
+    "Agilent SB-C18"
+  ),
+  PS = c(300, 80, 80, 120, 80, 180, 130, 100, 80, 130, 95, 95, 80),
+  Ligand = c(
+    "C3", "CN", "phenyl", "PFP", "C14", "C18",
+    "phenyl-hexyl", "PFP", "C8", "C8", "C18", "C18", "C18"
+  ),
+  Endcapping = c(
+    "no", "double", "no", "yes", "triple", "yes",
+    "yes", "no", "no", "yes", "double", "double", "no"
+  ),
+  CL = c(3.1, 4.3, 5.5, 5.1, 9.5, 13.8, 14.0, 7.0, 5.5, 13.0, 14.0, 9.0, 10.0),
+  `mm x mm, um` = c(
+    "12.5 x 2.1, 5", "12.5 x 2.1, 5", "5 x 2.1, 1.8",
+    "5 x 2.1, 1.9", "5 x 2.1, 1.8", "10 x 2.0, 3",
+    "5 x 2.1, 3.5", "5 x 2.1, 3.5", "5 x 2.1, 2.7",
+    "5 x 2.1, 1.7", "5 x 2.1, 1.8", "5 x 2.1, 1.8",
+    "5 x 2.1, 1.8"
+  ),
+  Other = c(
+    "Diisopropyl silane", "Dense bonding", "Diisopropyl silane",
+    "Superficially porous", "Diisopropyl silane Embedded amide",
+    "Polar modified", "Low silanol activity", "High silanol activity",
+    "Diisopropyl silane", "Low silanol activity", "Polymeric",
+    "Dense monolayer", "Diisobutyl silane"),
+  Abbr. = c(
+    "300SB-C3", "Eclipse XDB-CN", "SB-Phenyl", "PFP",
+    "Bonus RP", "C18-A", "CSH Phenyl-Hexyl", "HSS PFP",
+    "SB-C8", "BEH C8", "Eclipse PAH", "Eclipse Plus C18",
+    "SB-C18"
+  ),
+  stringsAsFactors = FALSE
+)
+
+column_df %>%
+  kableExtra::kbl(
+    escape = TRUE,
+    format = "latex",
+    booktabs = TRUE,
+  ) %>%
+  kableExtra::kable_styling(
+    font_size = 7,
+     latex_options = "HOLD_position"
+  )%>%
+  kableExtra::column_spec(8, width = "2.0cm") %>%   # Other
+  kableExtra::column_spec(9, width = "2.0cm") %>%   # Other
+  kableExtra::column_spec(2, width = "2.0cm") %>%   # Other
+  footnote(
+    general = "CL: carbon loading, PS: Pore Size"
+  )
+```
+
+# Figure S1. Raw data.
+
+![](../deliv/figures/manuscript/supplement/raw-data.pdf)
+{{< pagebreak >}}
+
+# Figure S2. Utility function. 
+
+$$
+\begin{aligned}
+d &= \left| \log k_1 - \log k_2 \right|, \\
+l_o &= 10^{\min\left(\log k_1,\ \log k_2\right)}, \\
+h_i &= 10^{\max\left(\log k_1,\ \log k_2\right)}, \\
+U &=
+\frac{1}{1 + e^{-(d - 0.07918125)/0.015}}
+\times
+\frac{1}{1 + e^{-(l_o - 2)/0.25}}
+\times
+\frac{1}{1 + e^{-(10 - h_i)/1.5}}.
+\end{aligned}
+$$
+
+![](../deliv/figures/manuscript/supplement/utylity-1.pdf)
+{{< pagebreak >}}
+
+# Figure S3. Residuals
+
+![](../deliv/figures/manuscript/supplement/residuals.pdf)
+{{< pagebreak >}}
+
+# Figure S4. GOF plots for 6 analytes
+
+![](../deliv/figures/manuscript/supplement/analyte-fits-example.pdf)
+{{< pagebreak >}}
+
+# Figure S5. Etas
+
+eta~a~ represents the deviation of an individual analyte’s parameter from its expected population-level value for a typical column, assuming no interactions.
+
+![](../deliv/figures/manuscript/supplement/etas.pdf)
+{{< pagebreak >}}
+
+# Figure S6. Kappas
+
+kappa~c~ represents the deviation of an individual analyte’s parameter from its expected population-level value for a typical analyte, assuming no interactions. The numbers correspond to specific columns (stationary phases). The legend is provided in Table 2S.
+
+![](../deliv/figures/manuscript/supplement/kappas-1.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/kappas-2.pdf)
+{{< pagebreak >}}
+
+# Figure S7. Dzetas
+
+dzeta~a,c~ represents analyte-column interactions.
+
+![](../deliv/figures/manuscript/supplement/dzeta-1.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-2.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-3.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-4.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-5.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-6.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-7.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-8.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-9.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-10.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-11.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-12.pdf)
+{{< pagebreak >}}
+![](../deliv/figures/manuscript/supplement/dzeta-13.pdf)
+{{< pagebreak >}}
+
+
+
+
+# Licenses {.unnumbered}
+
+-   Code & copy; 2023, Paweł Wiczling, licensed under BSD-3.
+-   Text & copy; 2023, Paweł Wiczling, licensed under CC-BY-NC 4.0.
+
+# Original Computing Environment {.unnumbered}
+
+```{r}
+sessionInfo()
+```

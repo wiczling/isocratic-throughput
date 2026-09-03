@@ -1,0 +1,123 @@
+---
+title: "Print analyte structures"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+```
+
+# Introductions
+
+Render two-dimensional molecular structures for all analytes present in the dataset.
+
+# Setup
+```{r setup-packages, message=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+library(tidyr)
+library(dplyr)
+library(GGally)
+library(reshape2)
+library(pracma)
+library(here)
+library(magick)
+library(reticulate)
+library(kableExtra)
+source("helper-functions.R")
+```
+
+```{r settings}
+data_deriv_dir = here::here("data","deriv")
+if(!file.exists(data_deriv_dir)) dir.create(data_deriv_dir, recursive = T)
+
+figures_structure_dir <- here::here("deliv","figures", "structures")
+tables_structure_dir <- here::here("deliv","tables", "structures")
+if(!file.exists(figures_structure_dir)) dir.create(figures_structure_dir, recursive = T)
+if(!file.exists(tables_structure_dir)) dir.create(tables_structure_dir, recursive = T)
+
+figures_structure_html_dir <- here::here("scripts","print-analytes-structures_files", "structures")
+if(!file.exists(figures_structure_html_dir)) dir.create(figures_structure_html_dir, recursive = T)
+```
+
+```{r load-data, message=FALSE, warning=FALSE}
+# load data
+smiles <- read.csv(here(data_deriv_dir,"smiles.csv"), sep = ",", header = TRUE)
+analytes_names = smiles$Compound
+```
+
+# Python
+
+```{r python-setup}
+# use_condaenv("rdkit-env", conda = "C:/Users/GUMed/anaconda3/Scripts/conda.exe", required = TRUE)
+# here: .Renviron: "RETICULATE_PYTHON="C:/Users/GUMed/anaconda3/envs/rdkit-ertl/python.exe"
+# Import RDKit modules
+rdkit <- import("rdkit")
+Chem <- import("rdkit.Chem")
+Draw <- import("rdkit.Chem.Draw")
+AllChem <- import("rdkit.Chem.AllChem")
+```
+
+## Save 2D structures to png
+```{r save-molecules-2Dstructures, results='asis'}
+save_png_fun <- function(i) {
+  ismiles <- smiles$smiles[i]
+  mol <- Chem$MolFromSmiles(ismiles)
+  AllChem$Compute2DCoords(mol)
+  
+  img <- Draw$MolToImage(mol, size = tuple(300L, 300L))
+  analyte_name <- analytes_names[i]
+  filename <- here::here(figures_structure_dir, 
+                         paste0(make_filename_safe(analyte_name), "_", i, ".png"))
+  img$save(filename)
+  
+  filename <- here::here(figures_structure_html_dir, 
+                         paste0(make_filename_safe(analyte_name), "_", i, ".png"))
+  img$save(filename)
+  
+  data.frame(
+    ID = analytes_names[i],
+    Analyte_Name = analyte_name,
+    Figure = sprintf('<img src="%s" width="100" height="100"/>',  
+                         paste0("print-analytes-structures_files/structures/", make_filename_safe(analyte_name), "_", i, ".png")),
+    stringsAsFactors = FALSE
+  )
+}
+
+results <- lapply(seq_along(smiles$smiles), save_png_fun)
+results_df <- bind_rows(results)
+
+kableExtra::kbl(results_df, 
+                caption = "Analyte Names and Corresponding Structure Images",
+                col.names = c("ID", "Analyte Name", "Structure"),
+                escape = FALSE) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                            full_width = FALSE) %>%
+  kableExtra::column_spec(2, width = "200px", 
+                          extra_css = "word-wrap: break-word; white-space: normal;") %>%
+  print()
+
+# save as html
+# kableExtra::save_kable(kable_table, file = here::here(figures_structure_dir, "analyte_table.html"))
+```
+
+# Session info
+```{r}
+sessionInfo()
+```

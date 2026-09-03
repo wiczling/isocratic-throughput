@@ -1,0 +1,546 @@
+---
+title: "Simulation"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+```
+
+# Introductions
+
+A set of simulations exploring possible models and its modification. We illustrate it using the Neue model:
+
+$$
+logk(\varphi) = logk_w -  S1 \cdot (1+S2) \cdot \varphi \cdot /(1+S2\cdot \varphi)
+$$
+
+# Libraries
+```{r library, message=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(GGally)
+library(reshape2)
+library(pracma)
+library(here)
+library(magick)
+library(ggcorrplot)
+
+select<-dplyr::select
+filter<-dplyr::filter
+set.seed(10271998) 
+source("helper-functions-v100.R")
+```
+
+```{r settings}
+data_deriv_dir = here::here("data","deriv")
+if(!file.exists(data_deriv_dir)) dir.create(data_deriv_dir, recursive = T)
+```
+
+
+```{r set-theme, include = FALSE}
+theme_set(theme_bw())
+theme_update(
+  axis.title = element_text(size = 10, face = "bold"), 
+  axis.text = element_text(size = 8), 
+  legend.title = element_blank(),
+  legend.text = element_text(size = 8),
+  legend.key.size = unit(0.4, "cm"),
+  strip.text = element_text(size = 8),
+  legend.position = "bottom",
+  panel.grid.minor = element_blank()
+)
+```
+# Effect of pH
+
+The changes on organic modifier content change the mobile phase pH and pKa of the analyte. 
+
+```{r pH-effects}
+# Parameters
+pHo      <- 3.2    
+alphapH <- 3
+pKa     <- 4 
+alphapKA   <- -0.5
+logkw1  <- 1
+logkw2  <- 2
+S11 <- 4
+S12 <- 4
+S2 <- 2
+
+
+f_exact <- function(fi) {
+  z <- pHo + alphapH * fi - pKa - alphapKA * fi
+  k1 = 10^(logkw1 - S11*(1+S2)*fi/(1+S2*fi))
+  k2 = 10^(logkw2 - S12*(1+S2)*fi/(1+S2*fi))
+  logk = log10((k1 + k2 * 10^(z)) / (1 + 10^(z)))
+}
+
+f_1 <- function(fi) {
+  logk = logkw1 - S11*(1+S2)*fi/(1+S2*fi)
+}
+
+f_2 <- function(fi) {
+ logk = logkw2 - S12*(1+S2)*fi/(1+S2*fi)
+}
+
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+  partial  = f_exact(fi_vals),
+  ionized  = f_1(fi_vals),
+  neutral  = f_2(fi_vals)
+)
+
+# Long format for ggplot
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+# Plot
+ggplot(df_long, aes(x = fi, y = value, linetype = method, color = method)) +
+  geom_line(size = 1, linewidth = 1, alpha = 0.6) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+```
+
+# Empirical dewetting model. Hindge function
+```{r dewetting}
+# Parameters
+fid <- 0.05
+delta = 0.001
+logkw1  <- 1
+S1 <- 4
+S2 <- 2
+
+# Function definitions
+f_exact <- function(fi) {
+   return (logkw1-S1*(1+S2)*fi/(1+S2*fi))
+}
+
+# Function definitions
+f_dewetting <- function(fi) {
+
+ logko <-logkw1-S1*(1+S2)*fid/(1+S2*fid)
+ logki <-logkw1-S1*(1+S2)*fi/(1+S2*fi)
+
+  w <- plogis((fid-fi)/delta)
+  
+  logk <- w*logko+(1-w)*logki
+}
+
+# Data frame
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+  nodewetting  = f_exact(fi_vals),
+  dewetting  = f_dewetting(fi_vals)
+)
+
+# Long format for ggplot
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+# Plot
+ggplot(df_long, aes(x = fi, y = value, color = method)) +
+  geom_line(size = 1) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+
+```
+
+# Empirical silanol model
+```{r silanol-model}
+# Parameters
+## https://www.sciencedirect.com/science/article/pii/S0021967304021879
+## Eq. 26
+
+logkw <- 2
+logks <- 1
+S1 <- 4
+S2 <- 2
+
+pKas <- 6
+
+pHo <- 3.2
+alpha = 3;
+
+# Function definitions
+f_sil <- function(fi) {
+   kw = 10^(logkw)
+   ks = 10^(logks)
+   fix = 10^(-(1+S2)*S1*fi/(1+S2*fi))
+   pH = pHo + alpha*fi;
+   six = 1/(1+10^(pKas-pH))
+   logk = log10(kw*fix + ks*six)
+}
+
+# Function definitions
+f_org <- function(fi) {
+   kw = 10^(logkw)
+   fix = 10^(-(1+S2)*S1*fi/(1+S2*fi))
+   logk = log10(kw*fix)
+}
+
+# Data frame
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+  silanols  = f_sil(fi_vals),
+  nosilanols  = f_org(fi_vals)
+)
+
+# Long format for ggplot
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+# Plot
+ggplot(df_long, aes(x = fi, y = value, color = method)) +
+  geom_line(size = 1) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+```
+
+# Combined. Dewetting and simplified silanol model
+```{r combined-dewetting-silanol}
+fio <-  0.05
+delta = 0.001
+logkw  <- 2
+S1 <- 4
+S2 <- 2
+logks <- 2
+pKas <- 6
+pHo <- 3.2
+alpha = 2;
+
+# Function definitions
+f_exact <- function(fi) {
+    kw = 10^(logkw)
+    ks = 10^(logks)
+    
+    pH = pHo + alpha*fi;
+    six = 1/(1+10^(pKas-pH))
+       
+    fix = 10^(-(1+S2)*S1*fi/(1+S2*fi))
+    logk = log10(kw*fix + ks*six)
+   return(logk)
+}
+
+# Function definitions
+f_dewetting <- function(fi) {
+   kw = 10^(logkw)
+   ks = 10^(logks)
+   
+   fixo = 10^(-(1+S2)*S1*fio/(1+S2*fio))
+   sixo = 1/(1+10^(pKas-(pHo + alpha*fio)))
+   logko = log10(kw*fixo + ks*sixo)
+   
+   fix = 10^(-(1+S2)*S1*fi/(1+S2*fi))
+   six = 1/(1+10^(pKas-(pHo + alpha*fi)))
+   logki = log10(kw*fix + ks*six)
+   
+   w <- plogis((fid-fi)/delta)
+   logk <- w*logko+(1-w)*logki
+}
+
+  
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+  nodewetting  = f_exact(fi_vals),
+  deweting1  = f_dewetting(fi_vals),
+  deweting2 = funlogki_sil(logkw, S1, logks, log10(S2), fio, pKas-pHo, alpha, fi_vals)
+)
+
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+ggplot(df_long, aes(x = fi, y = value, color = method)) +
+  geom_line(size = 1) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+
+```
+
+# Combined. Dewetting and pH effect model
+
+```{r combined-dewetting-pH}
+# Parameters
+pHo      <- 3.2 
+alpha  <- 3
+pKa      <- 5.5 
+logkw1  <- 1
+logkw2  <- 2
+S1 <- 4
+S2 <- 2
+logS2 = log10(S2)
+fid <-  0.05
+delta = 0.01
+logks <- 0.5
+pKas <- 6
+
+pKasmpH = pKas-pHo
+pHmpKa = pHo-pKa
+
+
+dlogkw  <- logkw2-logkw1
+
+funlogki_fi <- function(logkw1, S1, logks, S2,
+                        pKasmpH, alpha, pHmpKa, dlogkw, fi) {
+  
+  log10 <- 2.302585092994046  # ln(10)
+  
+  logfix <- -(1 + S2) * S1 * fi / (1 + S2 * fi)
+  
+  t1 <- (pKasmpH - alpha * fi) * log10
+  t2 <- (pHmpKa  + alpha * fi) * log10
+  
+  logksfix <- logks - log1p_exp(t1) / log10
+  
+  a <- (logkw1 - dlogkw + logfix) * log10
+  b <- logksfix * log10
+  c <- (logkw1 + logfix) * log10 + t2
+  
+  logk <- log_sum_exp(a, log_sum_exp(b, c)) / log10 -
+    log1p_exp(t2) / log10
+  
+  return(logk)
+}
+
+funlogki_pKa <- function(logkw, S1, logks, logS2, fid,
+                         pKasmpH, alpha, pHmpKa, dlogkw, fi) {
+  
+  S2 <- 10^logS2
+  delta <- 0.1
+  
+logkd <- funlogki_fi(
+    logkw, S1, logks, S2,
+    pKasmpH, alpha, pHmpKa, dlogkw, fid
+  )
+  
+  logk_raw <- funlogki_fi(
+    logkw, S1, logks, S2,
+    pKasmpH, alpha, pHmpKa, dlogkw, fi
+  )
+  
+  w <- plogis((fid - fi) / 0.01)
+  
+  logk <- w * logkd + (1 - w) * logk_raw
+}
+
+# Function definitions
+f_exact <- function(fi) {
+  z <-  (pHo + alpha*fi)-(pKa)
+  k1 = 10^(logkw1 - S1*(1+S2)*fi/(1+S2*fi))
+  k2 = 10^(logkw2 - S1*(1+S2)*fi/(1+S2*fi))
+  six = 1/(1+10^(pKas-(pHo+alpha*fi)))
+  ks = 10^(logks)
+  k1s = k1+ks*six
+  logk = log10((k1s + k2 * 10^(z)) / (1 + 10^(z)))
+}
+
+f_1 <- function(fi) {
+  k1 = 10^(logkw1 - S1*(1+S2)*fi/(1+S2*fi))
+  six = 1/(1+10^(pKas-(pHo+alpha*fi)))
+  ks = 10^(logks)
+  logk = log10(k1+ks*six)
+}
+
+f_2 <- function(fi) {
+  logk = logkw2 - S1*(1+S2)*fi/(1+S2*fi)
+}
+
+f_dewetting <- function(fi) {
+ logkd = f_exact(fid)
+ logk = f_exact(fi)
+  w <- plogis((fid - fi) / 0.01)
+  return(w * logkd + (1 - w) * logk)
+}
+
+funlogki_pKa_fi <- function(fi_vals) funlogki_pKa(logkw2, S1, logks, logS2, fid,
+               pKasmpH, alpha, pHmpKa, dlogkw, fi_vals)
+
+
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+  partial  = f_exact(fi_vals),
+  combined1  = f_dewetting(fi_vals),
+  combined2  = funlogki_pKa_fi(fi_vals),
+
+  ionized  = f_1(fi_vals),
+  neutral  = f_2(fi_vals)
+)
+
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+ggplot(df_long, aes(x = fi, y = value, linetype = method, color = method)) +
+  geom_line(size = 1, linewidth = 1, alpha = 0.6) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+```
+# Combined. Dewetting and pH effect model (empirical)
+$$
+\begin{aligned}
+logk_1 &= logk_{w1} + \gamma \varphi
+- \dfrac{(S1_1 \cdot (1+S2_1)\varphi}{1+S2_1\cdot\varphi}, \\[8pt]
+logk_2 &= logk_{w2}
+- \dfrac{S1_2\cdot(1+S2_2)\cdot\varphi}{1+S2_2\cdot\varphi}, \\[8pt]
+logk_t &= \log_{10}\!\left(
+\frac{k_1 + k_2\cdot\,10^{(\left(pH_o + \alpha \varphi \right) - pK_a)}}{1 + 10^{(\left(pH_o + \alpha \varphi \right) - pK_a)}}
+\right),\\
+
+logk_a &= logk_t(\varphi_{id}), \\
+logk_b &= logk_t(\varphi), \\
+w &= \frac{1}{1 + \exp\!\left(-\dfrac{\varphi_{id}-\varphi}{0.001}\right)}, \\
+logk &= w\cdot\,logk_a + (1-w)\cdot\,logk_b.
+\end{aligned}
+$$
+
+```{r combined-dewetting-pH-empirical}
+# Parameters
+pHo      <- 3.2 
+alpha  <- 4
+pKa      <- 5.5 
+logkw1  <- 1
+logkw2  <- 2
+S1 <- 4
+S2 <- 2
+logS2 = log10(S2)
+fid <-  0.05
+pKasmpH = pKas-pHo
+pHmpKa = pHo-pKa
+dlogkw  <- logkw2-logkw1
+cgamma = 4
+
+# Function definitions
+f_exact <- function(fi) {
+  z <-  (pHo + alpha*fi)-(pKa)
+  k1 = 10^(logkw1 + cgamma*fi- S1*(1+S2)*fi/(1+S2*fi))
+  k2 = 10^(logkw2 - S1*(1+S2)*fi/(1+S2*fi))
+  logk = log10((k1 + k2 * 10^(z)) / (1 + 10^(z)))
+}
+
+f_1 <- function(fi) {
+  logk = logkw1  + cgamma*fi - S1*(1+S2)*fi/(1+S2*fi)
+}
+
+f_2 <- function(fi) {
+  logk = logkw2 - S1*(1+S2)*fi/(1+S2*fi)
+}
+
+f_dewetting <- function(fi) {
+ logkd = f_exact(fid)
+ logk = f_exact(fi)
+  w <- plogis((fid - fi) / 0.001)
+  return(w * logkd + (1 - w) * logk)
+}
+
+funlogki_pKa_fi <- function(fi_vals) funlogki_pKa_v102(logkw2, S1, logS2, cgamma, fid,
+                              alpha, pHmpKa, -dlogkw, 0, 0, fi_vals)
+
+fi_vals <- seq(0, 1, by = 0.01)
+df <- data.frame(
+  fi = fi_vals,
+#  dewetting3  = f_dewetting(fi_vals),
+  combined  = funlogki_pKa_fi(fi_vals),
+    ionized  = f_1(fi_vals),
+  neutral  = f_2(fi_vals)
+)
+
+df_long <- reshape2::melt(df, id.vars = "fi", variable.name = "method", value.name = "value")
+
+fig1<-ggplot(df_long, aes(x = fi, y = value, linetype = method, color = method)) +
+  geom_line(size = 1, linewidth = 1, alpha = 0.6) +
+  labs(
+    x = "fi",
+    y = "logk"
+  ) 
+
+fig1
+```
+
+# Utylity function
+$$
+\begin{aligned}
+d &= \left| \log k_1 - \log k_2 \right|, \\
+l_o &= 10^{\min\left(\log k_1,\ \log k_2\right)}, \\
+h_i &= 10^{\max\left(\log k_1,\ \log k_2\right)}, \\
+U &=
+\frac{1}{1 + e^{-(d - 0.07918125)/0.015}}
+\times
+\frac{1}{1 + e^{-(l_o - 2)/0.25}}
+\times
+\frac{1}{1 + e^{-(10 - h_i)/1.5}}.
+\end{aligned}
+$$
+```{r utylity-function}
+logk1 = seq(0, log10(14), length.out = 50)
+logk2 = seq(0, log10(14), length.out = 50)
+df <- expand.grid(logk1 = logk1, logk2=logk2)  %>%
+ mutate(
+    d  = abs(logk1 - logk2),
+    lo = 10^(pmin(logk1, logk2)),
+    hi = 10^(pmax(logk1, logk2)),
+    utylity =
+      plogis((d  - 0.07918125) / 0.015) *  # midpoint for selectivity of 1.2, zero for 1.04 and 1 for 1.5
+      plogis((lo - 2)      / 0.25)  *
+      plogis((10 - hi)     / 1.5)) %>%
+  select(-d,-lo,-hi)
+
+fig2<-ggplot(df, aes(x = 10^logk1, y = 10^logk2, z = utylity)) +
+  geom_contour_filled()+
+   scale_fill_grey(start = 0.9, end = 0.1) +
+  labs(x = "Retention factor of analyte 1", y = "Retention factor of analyte 2")+
+  scale_x_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 2))+
+  scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 2))
+  # geom_vline(xintercept = c(log10(2),log10(10)), linetype = "dotted")+
+  # geom_hline(yintercept = c(log10(2),log10(10)), linetype = "dotted")
+
+fig2
+```
+# Manuscript figures
+```{r manuscript-figures}
+supplement_figure_dir <- here::here("deliv","figures","manuscript","supplement")
+if(!file.exists(supplement_figure_dir)) dir.create(supplement_figure_dir, recursive = T)
+
+# Figures
+ggsave(here::here(supplement_figure_dir, "model-sim-1.png"),
+       plot=fig1, width = 20, height = 20, units = "cm", dpi = 300)
+ggsave(here::here(supplement_figure_dir, "model-sim-1.pdf"),
+       plot=fig1, width = 20, height = 20, units = "cm", dpi = 300)
+
+ggsave(here::here(supplement_figure_dir, "utylity-1.png"),
+       plot=fig2, width = 20, height = 20, units = "cm", dpi = 300)
+ggsave(here::here(supplement_figure_dir, "utylity-1.pdf"),
+       plot=fig2, width = 20, height = 20, units = "cm", dpi = 300)
+```
+
+
+# Session info
+```{r}
+sessionInfo()
+```

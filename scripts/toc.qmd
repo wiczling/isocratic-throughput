@@ -1,0 +1,401 @@
+---
+title: "TOC"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+```
+
+# Setup
+```{r setup-packages, message=FALSE}
+library(ggplot2)
+library(grid)
+library(here)
+```
+
+```{r toc}
+# ---------------------------------------------------------
+# Colors
+# ---------------------------------------------------------
+
+col_analyte <- "#2563EB"   # blue
+col_column  <- "#F59E0B"   # orange
+col_model   <- "#14B8A6"   # teal
+col_chrom1  <- "#2563EB"   # chromatogram 1
+col_chrom2  <- "#DC2626"   # chromatogram 2
+col_text    <- "#374151"
+
+
+# ---------------------------------------------------------
+# Canvas
+# ---------------------------------------------------------
+
+p <- ggplot() +
+  coord_fixed(
+    xlim = c(0,13),
+    ylim = c(0,7)
+  ) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(
+      fill = "white",
+      colour = NA
+    )
+  )
+
+
+
+# =========================================================
+# 1. ANALYTES
+# =========================================================
+
+analytes <- data.frame(
+  x = rep(1.2,5),
+  y = c(1.8,2.7,3.6,4.5,5.4)-0.05
+)
+
+
+p <- p +
+  geom_point(
+    data = analytes,
+    aes(x,y),
+    size = 7/2,
+    colour = col_analyte
+  )
+
+
+p <- p +
+  annotate(
+    "text",
+    x = 1.2,
+    y = 6,
+    label = "Analytes",
+    size = 5/2,
+    fontface = "bold"
+  )
+
+
+# between analyte variability
+
+p <- p +
+  annotate(
+    "text",
+    x = 0.35,
+    y = 3.5,
+    label = "Between-analyte\nvariability",
+    angle = 90,
+    colour = col_analyte,
+    size = 4/2
+  )
+
+
+
+# =========================================================
+# 2. ARROW: ANALYTES → COLUMNS
+# =========================================================
+
+p <- p +
+  geom_segment(
+    aes(
+      x = 1.8,
+      xend = 6.5,
+      y = 3.5,
+      yend = 3.5
+    ),
+    arrow = arrow(length = unit(0.15,"cm")),
+    linewidth = 1/2
+  )
+
+
+
+# =========================================================
+# 3. STATIONARY PHASES
+# =========================================================
+
+columns <- data.frame(
+  x = c(4.0,4.9,5.8,6.7)-1.25,
+  label = c("C3","CN","Phenyl","C18")
+)
+
+
+# columns
+
+p <- p +
+  geom_rect(
+    data = columns,
+    aes(
+      xmin = x-0.20,
+      xmax = x+0.20,
+      ymin = 2.6,
+      ymax = 4.4
+    ),
+    fill = col_column,
+    colour = "black",
+    linewidth = 0.8/2
+  )
+
+
+# labels
+
+p <- p +
+  geom_text(
+    data = columns,
+    aes(
+      x = x,
+      y = 2.15,
+      label = label
+    ),
+    size = 4/2
+  )
+
+
+# title
+
+p <- p +
+  annotate(
+    "text",
+    x = 5.35-0.75,
+    y = 6,
+    label = "Stationary phases",
+    size = 5/2,
+    fontface = "bold"
+  )
+
+
+# between-column variability
+
+p <- p +
+  annotate(
+    "text",
+    x = 5.35-0.95,
+    y = 0.9,
+    label = "Between-column\nvariability",
+    colour = col_column,
+    size = 4/2
+  )
+
+# =========================================================
+# 5. MULTILEVEL MODEL
+# =========================================================
+
+p <- p +
+  geom_rect(
+    aes(
+      xmin = 7.25-0.2-0.5,
+      xmax = 9.25+0.2-0.5,
+      ymin = 2.4-0.2,
+      ymax = 4.6+0.2
+    ),
+    fill = col_model,
+    colour = "black",
+    linewidth = 1/2
+  )
+
+
+p <- p +
+  annotate(
+    "text",
+    x = 8.25-0.5,
+    y = 3.95,
+    label = "Interpretable\nMultilevel\nModel",
+    size = 4/2,
+    fontface = "bold"
+  )
+
+
+p <- p +
+  annotate(
+    "text",
+    x = 8.25-0.5,
+    y = 2.75,
+    label = "Analyte + Column\nhierarchy",
+    size = 3.0/2
+  )
+
+
+
+# =========================================================
+# 6. MODEL → CHROMATOGRAM ARROW
+# =========================================================
+
+p <- p +
+  geom_segment(
+    aes(
+      x = 8.95,
+      xend = 9.80,
+      y = 3.5,
+      yend = 3.5
+    ),
+    arrow = arrow(length = unit(0.15,"cm")),
+    linewidth = 1.2/2
+  )
+
+
+
+# =========================================================
+# 7. PREDICTED CHROMATOGRAMS
+# =========================================================
+
+x <- seq(10.0,11.25,length.out = 300)-0.25
+
+
+# upper chromatogram
+
+chrom1 <-
+  dnorm(x,10.25-0.25,0.07)*0.45 +
+  dnorm(x,10.65-0.25,0.11)*0.70 +
+  dnorm(x,11.05-0.25,0.09)*0.40
+
+
+# lower chromatogram
+
+chrom2 <-
+  dnorm(x,10.30-0.25,0.09)*0.35 +
+  dnorm(x,10.72-0.25,0.08)*0.55 +
+  dnorm(x,11.12-0.25,0.10)*0.45
+
+
+chrom <- data.frame(
+  x = x,
+  upper = 2.75 + chrom1,
+  lower = 1.55 + chrom2
+)
+
+
+p <- p +
+  geom_line(
+    data = chrom,
+    aes(x,upper),
+    colour = col_chrom1,
+    linewidth = 1/2
+  )
+
+
+p <- p +
+  geom_line(
+    data = chrom,
+    aes(x,lower),
+    colour = col_chrom2,
+    linewidth = 1/2
+  )
+
+
+# title
+
+p <- p +
+  annotate(
+    "text",
+    x = 10.65,
+    y = 6,
+    label = "Predicted retention",
+    size = 5/2,
+    fontface = "bold"
+  )
+
+
+
+# =========================================================
+# 8. CHROMATOGRAM → DECISION MAKING
+# =========================================================
+
+p <- p +
+  geom_segment(
+    aes(
+      x = 11.05,
+      xend = 11.60,
+      y = 3.5,
+      yend = 3.5
+    ),
+    arrow = arrow(length = unit(0.15,"cm")),
+    linewidth = 0.5
+  )
+
+
+p <- p +
+  annotate(
+    "text",
+    x = 12.15,
+    y = 3.5,
+    label = "Decision\nmaking",
+    angle = 90,
+    size = 5/2,
+    fontface = "bold",
+    colour = col_text
+  )
+
+
+
+# =========================================================
+# Display
+# =========================================================
+
+p
+
+
+
+# =========================================================
+# Export
+# =========================================================
+
+manuscript_figure_dir <- here::here(
+  "deliv",
+  "figures",
+  "manuscript",
+  "main"
+)
+
+if(!file.exists(manuscript_figure_dir)) {
+  dir.create(
+    manuscript_figure_dir,
+    recursive = TRUE
+  )
+}
+
+
+ggsave(
+  filename = here::here(
+    manuscript_figure_dir,
+    "TOC_multilevel_retention.svg"
+  ),
+  plot = p,
+  width = 7,
+  height = 4,
+  device = "svg",
+  bg = "white"
+)
+
+
+ggsave(
+  filename = here::here(
+    manuscript_figure_dir,
+    "TOC_multilevel_retention.tiff"
+  ),
+  plot = p,
+  width = 3.25,
+  height = 1.75,
+  dpi = 600,
+  bg = "white"
+)
+```
+
+
+# Session info
+```{r}
+sessionInfo()
+```

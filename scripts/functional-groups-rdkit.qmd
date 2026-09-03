@@ -1,0 +1,549 @@
+---
+title: "Rdkit-based data preparation"
+author:
+  - name: "Paweł Wiczling*"
+    affiliations:
+      - name: "Department of Biopharmaceutics and Pharmacodynamics, Medical University of Gdańsk, Gen. J. Hallera 107, 80-416 Gdańsk, Poland"
+date: "`r format(Sys.Date())`"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true  
+    code-tools: true
+    fig-width: 7
+    fig-height: 7
+knitr:
+  opts_chunk: 
+    dev: "ragg_png"
+---
+
+```{r knitr, include=FALSE}
+knitr::opts_chunk$set(cache=FALSE, message=FALSE, error=FALSE, warning=FALSE, comment=NA, out.width='95%')
+```
+
+# Introductions
+
+RDKit-based data preparation—including functional group identification, molecular descriptor calculation, and similarity matrix generation—followed by visualization of molecular networks and correlation patterns.
+
+# Setup
+```{r setup, message=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+library(tidyr)
+library(dplyr)
+library(GGally)
+library(reshape2)
+library(pracma)
+library(here)
+library(magick)
+library(reticulate)
+library(kableExtra)
+require(visNetwork, quietly = TRUE)
+library(igraph)
+library(ggraph)
+library(ggcorrplot)
+library(MASS)
+library(Matrix)
+
+set.seed(10271998)
+select<-dplyr::select
+source("helper-functions-v100.R")
+```
+
+```{r settings}
+data_deriv_dir = here::here("data","deriv")
+if(!file.exists(data_deriv_dir)) dir.create(data_deriv_dir, recursive = T)
+
+figures_eda_dir <- here::here("deliv","figures", "eda")
+tables_eda_dir <- here::here("deliv","tables", "eda")
+if(!file.exists(figures_eda_dir)) dir.create(figures_eda_dir, recursive = T)
+if(!file.exists(tables_eda_dir)) dir.create(tables_eda_dir, recursive = T)
+
+model_dir <- here::here("model","stan")  
+figures_dir <- here::here("deliv","figures", "stan")
+tables_dir <- here::here("deliv","tables", "stan")
+if(!file.exists(figures_dir)) dir.create(figures_dir, recursive = T)
+if(!file.exists(model_dir)) dir.create(model_dir, recursive = T)
+if(!file.exists(tables_dir)) dir.create(tables_dir, recursive = T)
+```
+
+# Load data
+```{r load-data, message=FALSE, warning=FALSE}
+data <- read.csv(here(data_deriv_dir, "data.csv"), header = TRUE)
+smiles <- read.csv(here(data_deriv_dir,"smiles.csv"), sep = ",", header = TRUE)
+analytes_names = smiles$Compound
+ fg_df = read.csv(file = here(data_deriv_dir,"smarts_functional_groups.csv"), header = TRUE)
+ descriptor_df <- read.csv(file = here(data_deriv_dir,"descriptor_df.csv"), header = TRUE)
+ similarity_ltri_rcdk_df <- read.csv(file = here(data_deriv_dir,"similarity_ltri_rcdk.csv"), header = TRUE)
+ similarity_matrix <- make_similarity_matrix_fun(similarity_ltri_rcdk_df)
+ 
+descriptor_df <- descriptor_df %>% mutate(smiles=SMILES) %>% left_join(smiles) %>%select(-smiles)
+```
+
+# Python
+```{r python-setup}
+# use_condaenv("rdkit-env", conda = "C:/Users/GUMed/anaconda3/Scripts/conda.exe", required = TRUE)
+# here: .Renviron: "RETICULATE_PYTHON="C:/Users/GUMed/anaconda3/envs/rdkit-ertl/python.exe"
+# Import RDKit modules
+Chem <- import("rdkit.Chem")
+AllChem <- import("rdkit.Chem.AllChem")
+Draw <- import("rdkit.Chem.Draw")
+rdFMCS <- import("rdkit.Chem.rdFMCS")
+rdmolops <- import("rdkit.Chem.rdmolops")
+FunctionalGroups <- Chem$FunctionalGroups
+Descriptors <- import("rdkit.Chem.Descriptors")
+rdMolDescriptors <- import("rdkit.Chem.rdMolDescriptors")
+# Create MCS parameters
+mcs_params <- rdFMCS$MCSParameters()
+mcs_params$AtomCompareParameters$MatchValences <- TRUE
+mcs_params$AtomCompareParameters$RingMatchesRingOnly <- TRUE
+mcs_params$AtomCompareParameters$CompleteRingsOnly <- TRUE
+mcs_params$AtomCompare <- rdFMCS$AtomCompare$CompareElements
+mcs_params$BondCompare <- rdFMCS$BondCompare$CompareOrderExact
+mcs_params$BondCompareParameters$CompleteRingsOnly <- TRUE
+mcs_params$BondCompareParameters$RingMatchesRingOnly <- TRUE
+mcs_params$Timeout <- 20L
+mcs_params$Verbose <- FALSE
+mcs_params$Threshold <- 1.0
+mcs_params$MaximizeBonds<-TRUE
+
+custom_groups <- list(
+  list(name = "Primary_carbon", smarts = "[CX4H3][#6]"),
+  list(name = "Secondary_carbon", smarts = "[CX4H2]([#6])[#6]"),
+  list(name = "Tertiary_carbon", smarts = "[CX4H1]([#6])([#6])[#6]"),
+  list(name = "Quaternary_carbon", smarts = "[CX4H0]([#6])([#6])([#6])[#6]"),
+  list(name = "Alkene", smarts = "[CX3;$([H2]),$([H1][#6]),$(C([#6])[#6])]=[CX3;$([H2]),$([H1][#6]),$(C([#6])[#6])]"),
+  list(name = "Alkyne", smarts = "[CX2]#[CX2]"),
+  list(name = "Allene", smarts = "[CX3]=[CX2]=[CX3]"),
+  list(name = "Alkylchloride", smarts = "[ClX1][CX4]"),
+  list(name = "Alkylfluoride", smarts = "[FX1][CX4]"),
+  list(name = "Alkylbromide", smarts = "[BrX1][CX4]"),
+  list(name = "Alkyliodide", smarts = "[IX1][CX4]"),
+  list(name = "Primary_alcohol", smarts = "[OX2H][CX4H2;!$(C([OX2H])[O,S,#7,#15])]"),
+  list(name = "Secondary_alcohol", smarts = "[OX2H][CX4H;!$(C([OX2H])[O,S,#7,#15])]"),
+  list(name = "Tertiary_alcohol", smarts = "[OX2H][CX4D4;!$(C([OX2H])[O,S,#7,#15])]"),
+  list(name = "Dialkylether", smarts = "[OX2]([CX4;!$(C([OX2])[O,S,#7,#15,F,Cl,Br,I])])[CX4;!$(C([OX2])[O,S,#7,#15])]"),
+  list(name = "Dialkylthioether", smarts = "[SX2]([CX4;!$(C([OX2])[O,S,#7,#15,F,Cl,Br,I])])[CX4;!$(C([OX2])[O,S,#7,#15])]"),
+  list(name = "Alkylarylether", smarts = "[OX2](c)[CX4;!$(C([OX2])[O,S,#7,#15,F,Cl,Br,I])]"),
+  list(name = "Diarylether", smarts = "[c][OX2][c]"),
+  list(name = "Alkylarylthioether", smarts = "[SX2](c)[CX4;!$(C([OX2])[O,S,#7,#15,F,Cl,Br,I])]"),
+  list(name = "Diarylthioether", smarts = "[c][SX2][c]"),
+  list(name = "Oxonium", smarts = "[O+;!$([O]~[!#6]);!$([S]*~[#7,#8,#15,#16])]"),
+  list(name = "Primary_aliph_amine", smarts = "[NX3H2+0,NX4H3+;!$([N][!C]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Secondary_aliph_amine", smarts = "[NX3H1+0,NX4H2+;!$([N][!C]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Tertiary_aliph_amine", smarts = "[NX3H0+0,NX4H1+;!$([N][!C]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Quaternary_aliph_ammonium", smarts = "[NX4H0+;!$([N][!C]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Primary_arom_amine", smarts = "[NX3H2+0,NX4H3+]c"),
+  list(name = "Secondary_arom_amine", smarts = "[NX3H1+0,NX4H2+;!$([N][!c]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Tertiary_arom_amine", smarts = "[NX3H0+0,NX4H1+;!$([N][!c]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Quaternary_arom_ammonium", smarts = "[NX4H0+;!$([N][!c]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Secondary_mixed_amine", smarts = "[NX3H1+0,NX4H2+;$([N]([c])[C]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Tertiary_mixed_amine", smarts = "[NX3H0+0,NX4H1+;$([N]([c])([C])[#6]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Quaternary_mixed_ammonium", smarts = "[NX4H0+;$([N]([c])([C])[#6][#6]);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Ammonium", smarts = "[N+;!$([N]~[!#6]);!$(N=*);!$([N]*~[#7,#8,#15,#16])]"),
+  list(name = "Alkylthiol", smarts = "[SX2H][CX4;!$(C([SX2H])~[O,S,#7,#15])]"),
+  #list(name = "Dialkylthioether", smarts = "[SX2]([CX4;!$(C([SX2])[O,S,#7,#15,F,Cl,Br,I])])[CX4;!$(C([SX2])[O,S,#7,#15])]"),
+  #list(name = "Alkylarylthioether", smarts = "[SX2](c)[CX4;!$(C([SX2])[O,S,#7,#15])]"),
+  list(name = "Disulfide", smarts = "[SX2D2][SX2D2]"),
+  list(name = "1,2-Aminoalcohol", smarts = "[OX2H][CX4;!$(C([OX2H])[O,S,#7,#15,F,Cl,Br,I])][CX4;!$(C([N])[O,S,#7,#15])][NX3;!$(NC=[O,S,N])]"),
+  list(name = "1,2-Diol", smarts = "[OX2H][CX4;!$(C([OX2H])[O,S,#7,#15])][CX4;!$(C([OX2H])[O,S,#7,#15])][OX2H]"),
+  list(name = "1,1-Diol", smarts = "[OX2H][CX4;!$(C([OX2H])([OX2H])[O,S,#7,#15])][OX2H]"),
+  list(name = "Hydroperoxide", smarts = "[OX2H][OX2]"),
+  list(name = "Peroxo", smarts = "[OX2D2][OX2D2]"),
+  list(name = "Organolithium_compounds", smarts = "[LiX1][#6,#14]"),
+  list(name = "Organomagnesium_compounds", smarts = "[MgX2][#6,#14]"),
+  list(name = "Organometallic_compounds", smarts = "[!#1;!#5;!#6;!#7;!#8;!#9;!#14;!#15;!#16;!#17;!#33;!#34;!#35;!#52;!#53;!#85]~[#6;!-]"),
+  list(name = "Aldehyde", smarts = "[$([CX3H][#6]),$([CX3H2])]=[OX1]"),
+  list(name = "Ketone", smarts = "[#6][CX3](=[OX1])[#6]"),
+  list(name = "Thioaldehyde", smarts = "[$([CX3H][#6]),$([CX3H2])]=[SX1]"),
+  list(name = "Thioketone", smarts = "[#6][CX3](=[SX1])[#6]"),
+  list(name = "Imine", smarts = "[NX2;$([N][#6]),$([NH]);!$([N][CX3]=[#7,#8,#15,#16])]=[CX3;$([CH2]),$([CH][#6]),$([C]([#6])[#6])]"),
+  list(name = "Immonium", smarts = "[NX3+;!$([N][!#6]);!$([N][CX3]=[#7,#8,#15,#16])]"),
+  list(name = "Oxime", smarts = "[NX2](=[CX3;$([CH2]),$([CH][#6]),$([C]([#6])[#6])])[OX2H]"),
+  list(name = "Oximether", smarts = "[NX2](=[CX3;$([CH2]),$([CH][#6]),$([C]([#6])[#6])])[OX2][#6;!$(C=[#7,#8])]"),
+  list(name = "Acetal", smarts = "[OX2]([#6;!$(C=[O,S,N])])[CX4;!$(C(O)(O)[!#6])][OX2][#6;!$(C=[O,S,N])]"),
+  list(name = "Hemiacetal", smarts = "[OX2H][CX4;!$(C(O)(O)[!#6])][OX2][#6;!$(C=[O,S,N])]"),
+  list(name = "Aminal", smarts = "[NX3v3;!$(NC=[#7,#8,#15,#16])]([#6])[CX4;!$(C(N)(N)[!#6])][NX3v3;!$(NC=[#7,#8,#15,#16])][#6]"),
+  list(name = "Hemiaminal", smarts = "[NX3v3;!$(NC=[#7,#8,#15,#16])]([#6])[CX4;!$(C(N)(N)[!#6])][OX2H]"),
+  list(name = "Thioacetal", smarts = "[SX2]([#6;!$(C=[O,S,N])])[CX4;!$(C(S)(S)[!#6])][SX2][#6;!$(C=[O,S,N])]"),
+  list(name = "Thiohemiacetal", smarts = "[SX2]([#6;!$(C=[O,S,N])])[CX4;!$(C(S)(S)[!#6])][OX2H]"),
+  list(name = "Halogen_acetal_like", smarts = "[NX3v3,SX2,OX2;!$(*C=[#7,#8,#15,#16])][CX4;!$(C([N,S,O])([N,S,O])[!#6])][FX1,ClX1,BrX1,IX1]"),
+  list(name = "Acetal_like", smarts = "[NX3v3,SX2,OX2;!$(*C=[#7,#8,#15,#16])][CX4;!$(C([N,S,O])([N,S,O])[!#6])][FX1,ClX1,BrX1,IX1,NX3v3,SX2,OX2;!$(*C=[#7,#8,#15,#16])]"),
+  list(name = "Halogenmethylen_ester_and_similar", smarts = "[NX3v3,SX2,OX2;$(**=[#7,#8,#15,#16])][CX4;!$(C([N,S,O])([N,S,O])[!#6])][FX1,ClX1,BrX1,IX1]"),
+  list(name = "NOS_methylen_ester_and_similar", smarts = "[NX3v3,SX2,OX2;$(**=[#7,#8,#15,#16])][CX4;!$(C([N,S,O])([N,S,O])[!#6])][NX3v3,SX2,OX2;!$(*C=[#7,#8,#15,#16])]"),
+  list(name = "Hetero_methylen_ester_and_similar", smarts = "[NX3v3,SX2,OX2;$(**=[#7,#8,#15,#16])][CX4;!$(C([N,S,O])([N,S,O])[!#6])][FX1,ClX1,BrX1,IX1,NX3v3,SX2,OX2;!$(*C=[#7,#8,#15,#16])]"),
+  list(name = "Cyanhydrine", smarts = "[NX1]#[CX2][CX4;$([CH2]),$([CH]([CX2])[#6]),$(C([CX2])([#6])[#6])][OX2H]"),
+  list(name = "Chloroalkene", smarts = "[ClX1][CX3]=[CX3]"),
+  list(name = "Fluoroalkene", smarts = "[FX1][CX3]=[CX3]"),
+  list(name = "Bromoalkene", smarts = "[BrX1][CX3]=[CX3]"),
+  list(name = "Iodoalkene", smarts = "[IX1][CX3]=[CX3]"),
+  list(name = "Enol", smarts = "[OX2H][CX3;$([H1]),$(C[#6])]=[CX3]"),
+  list(name = "Endiol", smarts = "[OX2H][CX3;$([H1]),$(C[#6])]=[CX3;$([H1]),$(C[#6])][OX2H]"),
+  list(name = "Enolether", smarts = "[OX2]([#6;!$(C=[N,O,S])])[CX3;$([H0][#6]),$([H1])]=[CX3]"),
+  list(name = "Enolester", smarts = "[OX2]([CX3]=[OX1])[#6X3;$([#6][#6]),$([H1])]=[#6X3;!$(C[OX2H])]"),
+  list(name = "Enamine", smarts = "[NX3;$([NH2][CX3]),$([NH1]([CX3])[#6]),$([N]([CX3])([#6])[#6]);!$([N]*=[#7,#8,#15,#16])][CX3;$([CH]),$([C][#6])]=[CX3]"),
+  list(name = "Thioenol", smarts = "[SX2H][CX3;$([H1]),$(C[#6])]=[CX3]"),
+  list(name = "Thioenolether", smarts = "[SX2]([#6;!$(C=[N,O,S])])[CX3;$(C[#6]),$([CH])]=[CX3]"),
+  list(name = "Acylchloride", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[ClX1]"),
+  list(name = "Acylfluoride", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[FX1]"),
+  list(name = "Acylbromide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[BrX1]"),
+  list(name = "Acyliodide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[IX1]"),
+  list(name = "Carboxylic_acid", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Carboxylic_ester", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Lactone", smarts = "[#6][#6X3R](=[OX1])[#8X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carboxylic_anhydride", smarts = "[CX3;$([H0][#6]),$([H1])](=[OX1])[#8X2][CX3;$([H0][#6]),$([H1])](=[OX1])"),
+  list(name = "Carbothioic_acid", smarts = "[CX3;!R;$([C][#6]),$([CH]);$([C](=[OX1])[$([SX2H]),$([SX1-])]),$([C](=[SX1])[$([OX2H]),$([OX1-])])]"),
+  list(name = "Carbothioic_S_ester", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[SX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carbothioic_S_lactone", smarts = "[#6][#6X3R](=[OX1])[#16X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carbothioic_O_ester", smarts = "[CX3;$([H0][#6]),$([H1])](=[SX1])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carbothioic_O_lactone", smarts = "[#6][#6X3R](=[SX1])[#8X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carbothioic_halide", smarts = "[CX3;$([H0][#6]),$([H1])](=[SX1])[FX1,ClX1,BrX1,IX1]"),
+  list(name = "Carbodithioic_acid", smarts = "[CX3;!R;$([C][#6]),$([CH]);$([C](=[SX1])[SX2H])]"),
+  list(name = "Carbodithioic_ester", smarts = "[CX3;!R;$([C][#6]),$([CH]);$([C](=[SX1])[SX2][#6;!$(C=[O,N,S])])]"),
+  list(name = "Carbodithiolactone", smarts = "[#6][#6X3R](=[SX1])[#16X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Primary_amide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[NX3H2]"),
+  list(name = "Secondary_amide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[#7X3H1][#6;!$(C=[O,N,S])]"),
+  list(name = "Tertiary_amide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[#7X3H0]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])]"),
+  list(name = "Lactam", smarts = "[#6R][#6X3R](=[OX1])[#7X3;$([H1][#6;!$(C=[O,N,S])]),$([H0]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Alkyl_imide", smarts = "[#6X3;$([H0][#6]),$([H1])](=[OX1])[#7X3H0]([#6])[#6X3;$([H0][#6]),$([H1])](=[OX1])"),
+  list(name = "N_hetero_imide", smarts = "[#6X3;$([H0][#6]),$([H1])](=[OX1])[#7X3H0]([!#6])[#6X3;$([H0][#6]),$([H1])](=[OX1])"),
+  list(name = "Imide_acidic", smarts = "[#6X3;$([H0][#6]),$([H1])](=[OX1])[#7X3H1][#6X3;$([H0][#6]),$([H1])](=[OX1])"),
+  list(name = "Thioamide", smarts = "[$([CX3;!R][#6]),$([CX3H;!R])](=[SX1])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Thiolactam", smarts = "[#6R][#6X3R](=[SX1])[#7X3;$([H1][#6;!$(C=[O,N,S])]),$([H0]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Oxim ester", smarts = "[#6X3;$([H0][#6]),$([H1])](=[OX1])[#8X2][#7X2]=,:[#6X3;$([H0]([#6])[#6]),$([H1][#6]),$([H2])]"),
+  list(name = "Amidine", smarts = "[NX3;!$(NC=[O,S])][CX3;$([CH]),$([C][#6])]=[NX2;!$(NC=[O,S])]"),
+  list(name = "Hydroxamic_acid", smarts = "[CX3;$([H0][#6]),$([H1])](=[OX1])[#7X3;$([H1]),$([H0][#6;!$(C=[O,N,S])])][$([OX2H]),$([OX1-])]"),
+  list(name = "Hydroxamic_acid_ester", smarts = "[CX3;$([H0][#6]),$([H1])](=[OX1])[#7X3;$([H1]),$([H0][#6;!$(C=[O,N,S])])][OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Imidoacid", smarts = "[CX3R0;$([H0][#6]),$([H1])](=[NX2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Imidoacid_cyclic", smarts = "[#6R][#6X3R](=,:[#7X2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Imidoester", smarts = "[CX3R0;$([H0][#6]),$([H1])](=[NX2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Imidolactone", smarts = "[#6R][#6X3R](=,:[#7X2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Imidothioacid", smarts = "[CX3R0;$([H0][#6]),$([H1])](=[NX2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[$([SX2H]),$([SX1-])]"),
+  list(name = "Imidothioacid_cyclic", smarts = "[#6R][#6X3R](=,:[#7X2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[$([SX2H]),$([SX1-])]"),
+  list(name = "Imidothioester", smarts = "[CX3R0;$([H0][#6]),$([H1])](=[NX2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[SX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Imidothiolactone", smarts = "[#6R][#6X3R](=,:[#7X2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[SX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Imidolactam", smarts = "[#6][#6X3R;$([H0](=[NX2;!$(N(=[#6X3][#7X3])C=[O,S])])[#7X3;!$(N([#6X3]=[#7X2])C=[O,S])]),$([H0](-[NX3;!$(N([#6X3]=[#7X2])C=[O,S])])=,:[#7X2;!$(N(=[#6X3][#7X3])C=[O,S])])]"),
+  list(name = "Imidoylhalide", smarts = "[CX3R0;$([H0][#6]),$([H1])](=[NX2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[FX1,ClX1,BrX1,IX1]"),
+  list(name = "Imidoylhalide_cyclic", smarts = "[#6R][#6X3R](=,:[#7X2;$([H1]),$([H0][#6;!$(C=[O,N,S])])])[FX1,ClX1,BrX1,IX1]"),
+  list(name = "Amidrazone", smarts = "[$([$([#6X3][#6]),$([#6X3H])](=[#7X2v3])[#7X3v3][#7X3v3]),$([$([#6X3][#6]),$([#6X3H])]([#7X3v3])=[#7X2v3][#7X3v3])]"),
+  list(name = "Alpha_aminoacid", smarts = "[NX3,NX4+;!$([N]~[!#6]);!$([N]*~[#7,#8,#15,#16])][C][CX3](=[OX1])[OX2H,OX1-]"),
+  list(name = "Alpha_hydroxyacid", smarts = "[OX2H][C][CX3](=[OX1])[OX2H,OX1-]"),
+  list(name = "Peptide_middle", smarts = "[NX3;$([N][CX3](=[OX1])[C][NX3,NX4+])][C][CX3](=[OX1])[NX3;$([N][C][CX3](=[OX1])[NX3,OX2,OX1-])]"),
+  list(name = "Peptide_C_term", smarts = "[NX3;$([N][CX3](=[OX1])[C][NX3,NX4+])][C][CX3](=[OX1])[OX2H,OX1-]"),
+  list(name = "Peptide_N_term", smarts = "[NX3,NX4+;!$([N]~[!#6]);!$([N]*~[#7,#8,#15,#16])][C][CX3](=[OX1])[NX3;$([N][C][CX3](=[OX1])[NX3,OX2,OX1-])]"),
+  list(name = "Carboxylic_orthoester", smarts = "[#6][OX2][CX4;$(C[#6]),$([CH])]([OX2][#6])[OX2][#6]"),
+  list(name = "Ketene", smarts = "[CX3]=[CX2]=[OX1]"),
+  list(name = "Ketenacetal", smarts = "[#7X2,#8X3,#16X2;$(*[#6,#14])][#6X3]([#7X2,#8X3,#16X2;$(*[#6,#14])])=[#6X3]"),
+  list(name = "Nitrile", smarts = "[NX1]#[CX2]"),
+  list(name = "Isonitrile", smarts = "[CX1-]#[NX2+]"),
+
+  list(name = "Carbonic_acid_dieester", smarts = "[#6;!$(C=[O,N,S])][#8X2][#6X3](=[OX1])[#8X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Carbonic_acid_esterhalide", smarts = "[#6;!$(C=[O,N,S])][OX2;!R][CX3](=[OX1])[OX2][FX1,ClX1,BrX1,IX1]"),
+  list(name = "Carbonic_acid_monoester", smarts = "[#6;!$(C=[O,N,S])][OX2;!R][CX3](=[OX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Thiocarbonic_acid_dieester", smarts = "[#6;!$(C=[O,N,S])][#8X2][#6X3](=[SX1])[#8X2][#6;!$(C=[O,N,S])]"),
+  list(name = "Thiocarbonic_acid_esterhalide", smarts = "[#6;!$(C=[O,N,S])][OX2;!R][CX3](=[SX1])[OX2][FX1,ClX1,BrX1,IX1]"),
+  list(name = "Thiocarbonic_acid_monoester", smarts = "[#6;!$(C=[O,N,S])][OX2;!R][CX3](=[SX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Urea", smarts = "[#7X3;!$([#7][!#6])][#6X3](=[OX1])[#7X3;!$([#7][!#6])]"),
+  list(name = "Thiourea", smarts = "[#7X3;!$([#7][!#6])][#6X3](=[SX1])[#7X3;!$([#7][!#6])]"),
+  list(name = "Isourea", smarts = "[#7X2;!$([#7][!#6])]=,:[#6X3]([#8X2&!$([#8][!#6]),OX1-])[#7X3;!$([#7][!#6])]"),
+  list(name = "Isothiourea", smarts = "[#7X2;!$([#7][!#6])]=,:[#6X3]([#16X2&!$([#16][!#6]),SX1-])[#7X3;!$([#7][!#6])]"),
+  list(name = "Guanidine", smarts = "[N;v3X3,v4X4+][CX3](=[N;v3X2,v4X3+])[N;v3X3,v4X4+]"),
+  list(name = "Carbaminic_acid", smarts = "[NX3]C(=[OX1])[O;X2H,X1-]"),
+  list(name = "Urethan", smarts = "[#7X3][#6](=[OX1])[#8X2][#6]"),
+  list(name = "Biuret", smarts = "[#7X3][#6](=[OX1])[#7X3][#6](=[OX1])[#7X3]"),
+  list(name = "Semicarbazide", smarts = "[#7X3][#7X3][#6X3]([#7X3;!$([#7][#7])])=[OX1]"),
+  list(name = "Carbazide", smarts = "[#7X3][#7X3][#6X3]([#7X3][#7X3])=[OX1]"),
+  list(name = "Semicarbazone", smarts = "[#7X2](=[#6])[#7X3][#6X3]([#7X3;!$([#7][#7])])=[OX1]"),
+  list(name = "Carbazone", smarts = "[#7X2](=[#6])[#7X3][#6X3]([#7X3][#7X3])=[OX1]"),
+  list(name = "Thiosemicarbazide", smarts = "[#7X3][#7X3][#6X3]([#7X3;!$([#7][#7])])=[SX1]"),
+  list(name = "Thiocarbazide", smarts = "[#7X3][#7X3][#6X3]([#7X3][#7X3])=[SX1]"),
+  list(name = "Thiosemicarbazone", smarts = "[#7X2](=[#6])[#7X3][#6X3]([#7X3;!$([#7][#7])])=[SX1]"),
+  list(name = "Thiocarbazone", smarts = "[#7X2](=[#6])[#7X3][#6X3]([#7X3][#7X3])=[SX1]"),
+  list(name = "Isocyanate", smarts = "[NX2]=[CX2]=[OX1]"),
+  list(name = "Cyanate", smarts = "[OX2][CX2]#[NX1]"),
+  list(name = "Isothiocyanate", smarts = "[NX2]=[CX2]=[SX1]"),
+  list(name = "Thiocyanate", smarts = "[SX2][CX2]#[NX1]"),
+  list(name = "Carbodiimide", smarts = "[NX2]=[CX2]=[NX2]"),
+  list(name = "Orthocarbonic_derivatives", smarts = "[CX4H0]([O,S,#7])([O,S,#7])([O,S,#7])[O,S,#7,F,Cl,Br,I]"),
+  list(name = "Phenol", smarts = "[OX2H][c]"),
+  list(name = "1,2-Diphenol", smarts = "[OX2H][c][c][OX2H]"),
+  list(name = "Arylchloride", smarts = "[Cl][c]"),
+  list(name = "Arylfluoride", smarts = "[F][c]"),
+  list(name = "Arylbromide", smarts = "[Br][c]"),
+  list(name = "Aryliodide", smarts = "[I][c]"),
+  list(name = "Arylthiol", smarts = "[SX2H][c]"),
+  list(name = "Iminoarene", smarts = "[c]=[NX2;$([H1]),$([H0][#6;!$([C]=[N,S,O])])]"),
+  list(name = "Oxoarene", smarts = "[c]=[OX1]"),
+  list(name = "Thioarene", smarts = "[c]=[SX1]"),
+  list(name = "Hetero_N_basic_H", smarts = "[nX3H1+0]"),
+  list(name = "Hetero_N_basic_no_H", smarts = "[nX3H0+0]"),
+  list(name = "Hetero_N_nonbasic", smarts = "[nX2,nX3+]"),
+  list(name = "Hetero_O", smarts = "[o]"),
+  list(name = "Hetero_S", smarts = "[sX2]"),
+  list(name = "Heteroaromatic", smarts = "[a;!c]"),
+  list(name = "Nitrite", smarts = "[NX2](=[OX1])[O;$([X2]),$([X1-])]"),
+  list(name = "Thionitrite", smarts = "[SX2][NX2]=[OX1]"),
+  list(name = "Nitrate", smarts = "[$([NX3](=[OX1])(=[OX1])[O;$([X2]),$([X1-])]),$([NX3+]([OX1-])(=[OX1])[O;$([X2]),$([X1-])])]"),
+  list(name = "Nitro", smarts = "[$([NX3](=O)=O),$([NX3+](=O)[O-])][!#8]"),
+  list(name = "Nitroso", smarts = "[NX2](=[OX1])[!#7;!#8]"),
+  list(name = "Azide", smarts = "[NX1]~[NX2]~[NX2,NX1]"),
+  list(name = "Acylazide", smarts = "[CX3](=[OX1])[NX2]~[NX2]~[NX1]"),
+  list(name = "Diazo", smarts = "[$([#6]=[NX2+]=[NX1-]),$([#6-]-[NX2+]#[NX1])]"),
+  list(name = "Diazonium", smarts = "[#6][NX2+]#[NX1]"),
+  list(name = "Nitrosamine", smarts = "[#7;!$(N*=O)][NX2]=[OX1]"),
+  list(name = "Nitrosamide", smarts = "[NX2](=[OX1])N-*=O"),
+  list(name = "N-Oxide", smarts = "[$([#7+][OX1-]),$([#7v5]=[OX1]);!$([#7](~[O])~[O]);!$([#7]=[#7])]"),
+  list(name = "Hydrazine", smarts = "[NX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6]);!$(NC=[O,N,S])][NX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6]);!$(NC=[O,N,S])]"),
+  list(name = "Hydrazone", smarts = "[NX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6]);!$(NC=[O,N,S])][NX2]=[#6]"),
+  list(name = "Hydroxylamine", smarts = "[NX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6]);!$(NC=[O,N,S])][OX2;$([H1]),$(O[#6;!$(C=[N,O,S])])]"),
+  list(name = "Sulfon", smarts = "[$([SX4](=[OX1])(=[OX1])([#6])[#6]),$([SX4+2]([OX1-])([OX1-])([#6])[#6])]"),
+  list(name = "Sulfoxide", smarts = "[$([SX3](=[OX1])([#6])[#6]),$([SX3+]([OX1-])([#6])[#6])]"),
+  list(name = "Sulfonium", smarts = "[S+;!$([S]~[!#6]);!$([S]*~[#7,#8,#15,#16])]"),
+  list(name = "Sulfuric_acid", smarts = "[SX4](=[OX1])(=[OX1])([$([OX2H]),$([OX1-])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Sulfuric_monoester", smarts = "[SX4](=[OX1])(=[OX1])([$([OX2H]),$([OX1-])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfuric_diester", smarts = "[SX4](=[OX1])(=[OX1])([OX2][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfuric_monoamide", smarts = "[SX4](=[OX1])(=[OX1])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Sulfuric_diamide", smarts = "[SX4](=[OX1])(=[OX1])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Sulfuric_esteramide", smarts = "[SX4](=[OX1])(=[OX1])([#7X3][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfonic_acid", smarts = "[SX4;$([H1]),$([H0][#6])](=[OX1])(=[OX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Sulfonamide", smarts = "[SX4;$([H1]),$([H0][#6])](=[OX1])(=[OX1])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Sulfonic_ester", smarts = "[SX4;$([H1]),$([H0][#6])](=[OX1])(=[OX1])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfonic_halide", smarts = "[SX4;$([H1]),$([H0][#6])](=[OX1])(=[OX1])[FX1,ClX1,BrX1,IX1]"),
+
+  list(name = "Sulfinic_acid", smarts = "[SX3;$([H1]),$([H0][#6])](=[OX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Sulfinic_amide", smarts = "[SX3;$([H1]),$([H0][#6])](=[OX1])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Sulfinic_ester", smarts = "[SX3;$([H1]),$([H0][#6])](=[OX1])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfinic_halide", smarts = "[SX3;$([H1]),$([H0][#6])](=[OX1])[FX1,ClX1,BrX1,IX1]"),
+  list(name = "Sulfenic_acid", smarts = "[SX2;$([H1]),$([H0][#6])][$([OX2H]),$([OX1-])]"),
+  list(name = "Sulfenic_amide", smarts = "[SX2;$([H1]),$([H0][#6])][#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Sulfenic_ester", smarts = "[SX2;$([H1]),$([H0][#6])][OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Sulfenic_halide", smarts = "[SX2;$([H1]),$([H0][#6])][FX1,ClX1,BrX1,IX1]"),
+  list(name = "Phosphine", smarts = "[PX3;$([H3]),$([H2][#6]),$([H1]([#6])[#6]),$([H0]([#6])([#6])[#6])]"),
+  list(name = "Phosphine_oxide", smarts = "[PX4;$([H3]=[OX1]),$([H2](=[OX1])[#6]),$([H1](=[OX1])([#6])[#6]),$([H0](=[OX1])([#6])([#6])[#6])]"),
+  list(name = "Phosphonium", smarts = "[P+;!$([P]~[!#6]);!$([P]*~[#7,#8,#15,#16])]"),
+  list(name = "Phosphorylen", smarts = "[PX4;$([H3]=[CX3]),$([H2](=[CX3])[#6]),$([H1](=[CX3])([#6])[#6]),$([H0](=[CX3])([#6])([#6])[#6])]"),
+  list(name = "Phosphonic_acid", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([$([OX2H]),$([OX1-])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Phosphonic_monoester", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([$([OX2H]),$([OX1-])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphonic_diester", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([OX2][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphonic_monoamide", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([$([OX2H]),$([OX1-])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphonic_diamide", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphonic_esteramide", smarts = "[PX4;$([H1]),$([H0][#6])](=[OX1])([OX2][#6;!$(C=[O,N,S])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_acid", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([$([OX2H]),$([OX1-])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Phosphoric_monoester", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([$([OX2H]),$([OX1-])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphoric_diester", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([OX2][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphoric_triester", smarts = "[PX4D4](=[OX1])([OX2][#6;!$(C=[O,N,S])])([OX2][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphoric_monoamide", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([$([OX2H]),$([OX1-])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_diamide", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_triamide", smarts = "[PX4D4](=[OX1])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_monoestermonoamide", smarts = "[PX4D4](=[OX1])([$([OX2H]),$([OX1-])])([OX2][#6;!$(C=[O,N,S])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_diestermonoamide", smarts = "[PX4D4](=[OX1])([OX2][#6;!$(C=[O,N,S])])([OX2][#6;!$(C=[O,N,S])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphoric_monoesterdiamide", smarts = "[PX4D4](=[OX1])([OX2][#6;!$(C=[O,N,S])])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphinic_acid", smarts = "[PX4;$([H2]),$([H1][#6]),$([H0]([#6])[#6])](=[OX1])[$([OX2H]),$([OX1-])]"),
+  list(name = "Phosphinic_ester", smarts = "[PX4;$([H2]),$([H1][#6]),$([H0]([#6])[#6])](=[OX1])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphinic_amide", smarts = "[PX4;$([H2]),$([H1][#6]),$([H0]([#6])[#6])]"),
+  list(name = "Phosphonous_acid", smarts = "[PX3;$([H1]),$([H0][#6])]([$([OX2H]),$([OX1-])])[$([OX2H]),$([OX1-])]"),
+  list(name = "Phosphonous_monoester", smarts = "[PX3;$([H1]),$([H0][#6])]([$([OX2H]),$([OX1-])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphonous_diester", smarts = "[PX3;$([H1]),$([H0][#6])]([OX2][#6;!$(C=[O,N,S])])[OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphonous_monoamide", smarts = "[PX3;$([H1]),$([H0][#6])]([$([OX2H]),$([OX1-])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphonous_diamide", smarts ="[PX3;$([H1]),$([H0][#6])]([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])([#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])])"), # modified
+  list(name = "Phosphonous_esteramide", smarts = "[PX3;$([H1]),$([H0][#6])]([OX2][#6;!$(C=[O,N,S])])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Phosphinous_acid", smarts = "[PX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6])][$([OX2H]),$([OX1-])]"),
+  list(name = "Phosphinous_ester", smarts = "[PX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6])][OX2][#6;!$(C=[O,N,S])]"),
+  list(name = "Phosphinous_amide", smarts = "[PX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6])][#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+  list(name = "Quart_silane", smarts = "[SiX4]([#6])([#6])([#6])[#6]"),
+  list(name = "Non-quart_silane", smarts = "[SiX4;$([H1]([#6])([#6])[#6]),$([H2]([#6])[#6]),$([H3][#6]),$([H4])]"),
+  list(name = "Silylmonohalide", smarts = "[SiX4]([FX1,ClX1,BrX1,IX1])([#6])([#6])[#6]"),
+  list(name = "Het_trialkylsilane", smarts = "[SiX4]([!#6])([#6])([#6])[#6]"),
+  list(name = "Dihet_dialkylsilane", smarts = "[SiX4]([!#6])([!#6])([#6])[#6]"),
+  list(name = "Trihet_alkylsilane", smarts = "[SiX4]([!#6])([!#6])([!#6])[#6]"),
+  list(name = "Trialkylborane", smarts = "[BX3]([#6])([#6])[#6]"),
+  list(name = "Boric_acid_derivatives", smarts = "[BX3]([!#6])([!#6])[!#6]"),
+  list(name = "Boronic_acid_derivative", smarts = "[BX3]([!#6])([!#6])[!#6]"),
+  list(name = "Borohydride", smarts = "[BH1,BH2,BH3,BH4]"),
+  list(name = "Quaternary_boron", smarts = "[BX4]"),
+  list(name = "Aromatic", smarts = "a"),
+  list(name = "Heterocyclic", smarts = "[!#6;!R0]"),
+  list(name = "Epoxide", smarts = "[OX2r3]1[#6r3][#6r3]1"),
+  list(name = "NH_aziridine", smarts = "[NX3H1r3]1[#6r3][#6r3]1"),
+  list(name = "Spiro", smarts = "[D4R;$(*(@*)(@*)(@*)@*)]"),
+  list(name = "Annelated_rings", smarts = "[R;$(*(@*)(@*)@*);!$([R2;$(*(@*)(@*)(@*)@*)])]@[R;$(*(@*)(@*)@*);!$([R2;$(*(@*)(@*)(@*)@*)])]"),
+  list(name = "Bridged_rings", smarts = "[R;$(*(@*)(@*)@*);!$([D4R;$(*(@*)(@*)(@*)@*)]);!$([R;$(*(@*)(@*)@*);!$([R2;$(*(@*)(@*)(@*)@*)])]@[R;$(*(@*)(@*)@*);!$([R2;$(*(@*)(@*)(@*)@*)])])]"),
+  list(name = "Sugar_pattern_1", smarts = "[OX2;$([r5]1@C@C@C(O)@C1),$([r6]1@C@C@C(O)@C(O)@C1)]"),
+  list(name = "Sugar_pattern_2", smarts = "[OX2;$([r5]1@C(!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C1),$([r6]1@C(!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C@C1)]"),
+  list(name = "Sugar_pattern_2_reducing", smarts = "[OX2;$([r5]1@C(!@[OX2H1])@C@C@C1),$([r6]1@C(!@[OX2H1])@C@C@C@C1)]"),
+  list(name = "Conjugated_double_bond", smarts = "*=*[*]=,#,:[*]"),
+  list(name = "Conjugated_tripple_bond", smarts = "*#*[*]=,#,:[*]"),
+  list(name = "Mixed_anhydrides", smarts = "[$(*=O),$([#16,#14,#5]),$([#7]([#6]=[OX1]))][#8X2][$(*=O),$([#16,#14,#5]),$([#7]([#6]=[OX1]))]"),
+  list(name = "Halogen_on_hetero", smarts = "[FX1,ClX1,BrX1,IX1][!#6]"),
+  list(name = "Halogen_multi_subst", smarts = "[F,Cl,Br,I;!$([X1]);!$([X0-])]"),
+  list(name = "Trifluoromethyl", smarts = "[FX1][CX4;!$([H0][Cl,Br,I]);!$([F][C]([F])([F])[F])]([FX1])([FX1])"),
+ # list(name = "C_ONS_bond", smarts = "[#6]~[#7,#8,#16]"),
+  list(name = "Anion", smarts = "[-1,-2,-3,-4,-5,-6,-7]"),
+  list(name = "Kation", smarts = "[+1,+2,+3,+4,+5,+6,+7]"),
+  list(name = "Dicarbodiazene", smarts = "[CX3](=[OX1])[NX2]=[NX2][CX3](=[OX1])"),
+  list(name = "CH-acidic", smarts = "[$([CX4;!$([H0]);!$(C[!#6;!$([P,S]=O);!$(N(~O)~O)])][$([CX3]=[O,N,S]),$(C#[N]),$([S,P]=[OX1]),$([NX3]=O),$([NX3+](=O)[O-]);!$(*[S,O,N;H1,H2]);!$([*+0][S,O;X1-])]),$([CX4;!$([H0])]1[CX3]=[CX3][CX3]=[CX3]1)]"),
+  list(name = "CH-acidic_strong", smarts = "[CX4;!$([H0]);!$(C[!#6;!$([P,S]=O);!$(N(~O)~O)])]([$([CX3]=[O,N,S]),$(C#[N]),$([S,P]=[OX1]),$([NX3]=O),$([NX3+](=O)[O-]);!$(*[S,O,N;H1,H2]);!$([*+0][S,O;X1-])])[$([CX3]=[O,N,S]),$(C#[N]),$([S,P]=[OX1]),$([NX3]=O),$([NX3+](=O)[O-]);!$(*[S,O,N;H1,H2]);!$([*+0][S,O;X1-])]")
+)
+
+# removed: 
+# list(name = "Amine", smarts = "[NX3+0,NX4+;!$([N]~[!#6]);!$([N]*~[#7,#8,#15,#16])]"),
+ # list(name = "Sulfuric_derivative", smarts = "[SX4D4](=[!#6])(=[!#6])([!#6])[!#6]"),
+  #list(name = "Phosphinous_derivatives", smarts = "[PX3;$([H2]),$([H1][#6]),$([H0]([#6])[#6])][!#6]"),
+# list(name = "Sugar_pattern_combi", smarts = "[OX2;$([r5]1@C(!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C(O)@C1),$([r6]1@C(!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C(O)@C(O)@C1)]"),
+# list(name = "Sugar_pattern_2_alpha", smarts = "[OX2;$([r5]1@[C@@](!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C1),$([r6]1@[C@@](!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C@C1)]"),
+# list(name = "Sugar_pattern_2_beta", smarts = "[OX2;$([r5]1@[C@](!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C1),$([r6]1@[C@](!@[OX2,NX3,SX2,FX1,ClX1,BrX1,IX1])@C@C@C@C1)]"),
+# list(name = "Carbonic_acid_derivatives", smarts = "[!#6][#6X3](=[!#6])[!#6]"),
+#  list(name = "Chiral_center_specified", smarts = "[$([*@](~*)(~*)(*)*),$([*@H](*)(*)*),$([*@](~*)(*)*),$([*@H](~*)~*)]")
+# Charged
+#   list(name = "1,3-Tautomerizable", smarts = "[$([#7X2,OX1,SX1]=*[!H0;!$([a;!n])]),$([#7X3,OX2,SX2;!H0]*=*),$([#7X3,OX2,SX2;!H0]*:n)]"),
+#   list(name = "1,5-Tautomerizable", smarts = "[$([#7X2,OX1,SX1]=,:**=,:*[!H0;!$([a;!n])]),$([#7X3,OX2,SX2;!H0]*=**=*),$([#7X3,OX2,SX2;!H0]*=,:**:n)]"),
+#   list(name = "Rotatable_bond", smarts = "[!$(*#*)&!D1]-!@[!$(*#*)&!D1]"),
+#   list(name = "Michael_acceptor", smarts = "[CX3]=[CX3][$([CX3]=[O,N,S]),$(C#[N]),$([S,P]=[OX1]),$([NX3]=O),$([NX3+](=O)[O-])]"),
+#   #list(name = "Cis_double_bond", smarts = "*/[D2]=[D2]\\*"),
+#   #list(name = "Trans_double_bond", smarts = "*/[D2]=[D2]/*"),
+# #list(name = "Amide", smarts = #"[CX3;$([R0][#6]),$([H1R0])](=[OX1])[#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N#,S])])]"),
+#   list(name = "Vinylogous_carbonyl_or_carboxyl_derivative", smarts = "[#6X3](=[OX1])[#6X3]=,:[#6X3][#7,#8,#16,F,Cl,Br,I]"),
+#   list(name = "Vinylogous_acid", smarts = "[#6X3](=[OX1])[#6X3]=,:[#6X3][$([OX2H]),$([OX1-])]"),
+#   list(name = "Vinylogous_ester", smarts = "[#6X3](=[OX1])[#6X3]=,:[#6X3][#6;!$(C=[O,N,S])]"),
+#   list(name = "Vinylogous_amide", smarts = "[#6X3](=[OX1])[#6X3]=,:[#6X3][#7X3;$([H2]),$([H1][#6;!$(C=[O,N,S])]),$([#7]([#6;!$(C=[O,N,S])])[#6;!$(C=[O,N,S])])]"),
+#   list(name = "Vinylogous_halide", smarts = "[#6X3](=[OX1])[#6X3]=,:[#6X3][FX1,ClX1,BrX1,IX1]"),
+#   list(name = "Alcohol", smarts = "[OX2H][CX4;!$(C([OX2H])[O,S,#7,#15])]"),
+#   list(name = "Acylhalide", smarts = "[CX3;$([R0][#6]),$([H1R0])](=[OX1])[FX1,ClX1,BrX1,IX1]"),
+#   list(name = "Carboxylic_acid_derivative", smarts = "[$([#6X3H0][#6]),$([#6X3H])](=[!#6])[!#6]"),  
+#   list(name = "Sulfonic_derivative", smarts = "[SX4;$([H1]),$([H0][#6])](=[!#6])(=[!#6])[!#6]"),
+#   list(name = "Sulfinic_derivative", smarts = "[SX3;$([H1]),$([H0][#6])](=[!#6])[!#6]"),
+#   list(name = "Sulfenic_derivative", smarts = "[SX2;$([H1]),$([H0][#6])][!#6]"),
+#   list(name = "Phosphonic_acid_derivative", smarts = "[PX4;$([H1]),$([H0][#6])](=[!#6])([!#6])[!#6]"),
+#   list(name = "Phosphoric_acid_derivative", smarts = "[PX4D4](=[!#6])([!#6])([!#6])[!#6]"),
+#   list(name = "Phosphinic_acid_derivative", smarts = "[PX4;$([H2]),$([H1][#6]),$([H0]([#6])[#6])](=[!#6])[!#6]"), 
+#   list(name = "Phosphonous_derivatives", smarts = "[PX3;$([D2]),$([D3][#6])]([!#6])[!#6]"),
+#   list(name = "Silicic_acid_derivative", smarts = "[SiX4]([!#6])([!#6])([!#6])[!#6]"),
+  
+fg_hierarchy <- FunctionalGroups$BuildFuncGroupHierarchy()
+
+fg_hierarchy <- fg_hierarchy[[1]]
+fg_hierarchy <- extend_fg_hierarchy(fg_hierarchy, custom_groups)
+fg_hierarchy <- fg_hierarchy[-1]
+```
+
+# Functional groups
+```{r functional-groups, eval=FALSE}
+
+fg_list <- lapply(fg_hierarchy, function(fg) {
+  list(name = fg$name, smarts = fg$smarts)
+})
+fg_names <- sapply(fg_list, `[[`, "name")
+fg_smarts <- sapply(fg_list, function(fg) Chem$MolFromSmarts(fg$smarts))
+
+get_fg_counts <- function(smile) {
+  mol <- Chem$MolFromSmiles(smile)
+  if (is.null(mol)) {
+    return(rep(NA_integer_, length(fg_smarts)))
+  }
+  sapply(fg_smarts, function(smarts_mol) {
+    matches <- mol$GetSubstructMatches(smarts_mol)
+    length(matches)
+  })
+}
+
+analyze_smiles_vector <- function(smiles_vector) {
+  fg_matrix <- t(sapply(smiles_vector, get_fg_counts))
+  colnames(fg_matrix) <- fg_names
+  result_df <- as_tibble(fg_matrix)
+  result_df <- bind_cols(tibble(SMILES = smiles_vector), result_df)
+  return(result_df)
+}
+
+fg_df <- analyze_smiles_vector(smiles$smiles)
+fg_df<-fg_df%>%mutate(id1 = smiles$ID,
+                      id2 = smiles$ID, .before = SMILES)
+write.csv(fg_df, file = here(data_deriv_dir,"smarts_functional_groups.csv"), row.names = FALSE)
+```
+
+# Similarity matrix
+```{r similarity, eval=FALSE}
+DataStructs <- import("rdkit.DataStructs")
+smiles_vec <- smiles$smiles
+
+compute_tanimoto_similarity <- function(smiles1, smiles2) {
+  mol1 <- Chem$MolFromSmiles(smiles1)
+  mol2 <- Chem$MolFromSmiles(smiles2)
+  
+  # Generate molecular fingerprints (e.g., Morgan fingerprints with radius 2)
+  fingerprint1 <- Chem$RDKFingerprint(mol1)
+  fingerprint2 <- Chem$RDKFingerprint(mol2)
+  
+  # Calculate Tanimoto similarity
+  similarity <- DataStructs$TanimotoSimilarity(fingerprint1, fingerprint2)
+  
+  return(similarity)
+}
+
+n <- length(smiles_vec)
+similarity_matrix <- matrix(0, nrow = n, ncol = n)
+ 
+for (i in 1:n) {
+  for (j in i:n) {  
+    similarity <- compute_tanimoto_similarity(smiles_vec[i], smiles_vec[j])
+    similarity_matrix[i, j] <- similarity
+    similarity_matrix[j, i] <- similarity 
+  }
+}
+
+diag(similarity_matrix) <- 1
+
+write.csv(similarity_to_ltr_fun(similarity_matrix), file = here(data_deriv_dir,"similarity_ltri_rcdk.csv"), row.names = FALSE)
+```
+
+## Visualise similarity matrix
+```{r part1}
+ggcorrplot(similarity_matrix)+
+  scale_fill_gradientn(colors = c("white", "gray", "red"), limits = c(0, 1))
+```
+
+# Descriptors
+```{r descriptors, eval=FALSE}
+# calculate descriptors based on SMILES
+calc_descriptor_panel <- function(smiles_vector) {
+  results <- lapply(smiles_vector, function(smiles) {
+    mol <- Chem$MolFromSmiles(smiles)
+    if (is.null(mol)) {
+      return(rep(NA, 10))
+    }
+
+    mol_h <- Chem$AddHs(mol)
+    tryCatch({
+      AllChem$EmbedMolecule(mol_h)
+    }, error = function(e) {})
+
+    c(
+      MolWt = Descriptors$MolWt(mol),
+      LogP = Descriptors$MolLogP(mol),
+      TPSA = rdMolDescriptors$CalcTPSA(mol),
+      LabuteASA = rdMolDescriptors$CalcLabuteASA(mol_h),
+      NumHAcceptors = Descriptors$NumHAcceptors(mol),
+      NumHDonors = Descriptors$NumHDonors(mol),
+      NumRotatableBonds = Descriptors$NumRotatableBonds(mol),
+      RingCount = Descriptors$RingCount(mol),
+      NumAromaticRings = Descriptors$NumAromaticRings(mol),
+      ExactMolWt = rdMolDescriptors$CalcExactMolWt(mol)
+    )
+  })
+
+  # Convert list to data frame
+  df <- as.data.frame(do.call(rbind, results))
+  df$SMILES <- smiles_vector
+  df <- df %>% relocate(SMILES)
+  return(df)
+}
+
+descriptor_df <- calc_descriptor_panel(smiles$smiles)
+write.csv(descriptor_df, file = here(data_deriv_dir,"descriptor_df.csv"), row.names = FALSE)
+```
+
+# Session info
+```{r}
+sessionInfo()
+```
