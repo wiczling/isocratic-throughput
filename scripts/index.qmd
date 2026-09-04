@@ -31,7 +31,7 @@ editor:
 
 1. [Final Model](model-development-107.html "Final Model")
 
-2. [Decision Making and ranking](model-107-decision-making.html "Decision Making and Column Ranking") 
+2. [Decision Making and Ranking](model-107-decision-making.html "Decision Making and Column Ranking") 
 
 # Licenses {.unnumbered}
 
